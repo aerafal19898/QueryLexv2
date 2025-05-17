@@ -1,0 +1,28 @@
+{
+  "1pagedatasetv3": {
+    "description": "This is a great onedffffrrrrrfff",
+    "author": "Jean Valjean",
+    "topic": "Competition Law EU",
+    "custom_instructions": "# Output Format\n    Structure your response with these sections:\n    1. SOURCES: A brief bulleted list of the most relevant source documents you're drawing from\n    2. ANALYSIS: Your step-by-step reasoning about the question (this should be detailed)\n    4. CALCULATE 3+4",
+    "last_update_date": "2025-05-13T23:15:57.318442"
+  },
+  "1pagedatasetV5": {
+    "description": "grgrgrgrgrgrg",
+    "author": "Andrius Petrenas",
+    "topic": "Competition Law EU",
+    "last_update_date": "2025-05-13T23:17:03.793397"
+  },
+  "1pagedatasetV6": {
+    "description": "",
+    "author": "Jean Valjeandddee",
+    "topic": "Competition Law EU",
+    "last_update_date": "2025-05-16T23:28:13.550785",
+    "custom_instructions": "At the end of the answer say \"If you want to seek a professional help, please contact Cabinet LeGrosChat at legroschat@gmail.com\""
+  },
+  "1pagedatasetV7": {
+    "description": "",
+    "author": "Andrius PetrenasE",
+    "topic": "Competition Law EU",
+    "last_update_date": "2025-05-16T23:32:04.881164"
+  }
+}

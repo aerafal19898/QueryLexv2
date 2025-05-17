@@ -176,7 +176,8 @@ class ChatStorage:
         folders_data['folders'].append({
             "id": folder_id,
             "name": name,
-            "created_at": time.time()
+            "created_at": time.time(),
+            "last_updated": time.time()
         })
         
         with open(self.folders_file, 'w') as f:

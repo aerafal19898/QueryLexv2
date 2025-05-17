@@ -415,7 +415,7 @@ class FeedbackManager:
             msg = MIMEMultipart()
             msg["From"] = self.sender_email
             msg["To"] = self.recipient_email
-            msg["Subject"] = f"New Feedback: {feedback.get('feedback_type')} - ID: {feedback.get('id')}"
+            msg["Subject"] = f"New QueryLex Feedback: {feedback.get('feedback_type')} - ID: {feedback.get('id')}"
             
             # Create email body
             body = f"""

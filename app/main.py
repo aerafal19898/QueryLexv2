@@ -2,7 +2,7 @@
 Main application file for the Legal Sanctions RAG system.
 """
 
-from flask import Flask, render_template, request, jsonify, session, after_this_request, g, redirect, url_for, Response
+from flask import Flask, render_template, request, jsonify, session, after_this_request, g, redirect, url_for, Response, stream_with_context
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, create_refresh_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 from functools import wraps
@@ -42,6 +42,7 @@ dotenv.load_dotenv()
 try:
     nltk.download('punkt', quiet=True)
     nltk.download('averaged_perceptron_tagger', quiet=True)
+    nltk.download('averaged_perceptron_tagger_eng', quiet=True)
     # For English only
     nltk.download('maxent_ne_chunker', quiet=True)
     nltk.download('words', quiet=True)
@@ -78,12 +79,12 @@ chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
 # Initialize embeddings
 embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
 
-# Initialize the OpenRouter client with the DeepSeek R1 model
-print(f"Using OpenRouter with model: deepseek/deepseek-r1-distill-llama-70b")
+# Initialize the OpenRouter client with the new DeepSeek model
+print(f"Using OpenRouter with model: deepseek/deepseek-chat-v3-0324:free")
 llm_client = OpenRouterClient(
     api_key=OPENROUTER_API_KEY, 
     api_base=OPENROUTER_API_BASE,
-    model="deepseek/deepseek-r1-distill-llama-70b"
+    model="deepseek/deepseek-chat-v3-0324:free"
 )
 
 # Check for GPU
@@ -148,6 +149,24 @@ chat_storage = ChatStorage()
 
 # Define base directory
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATASET_METADATA_FILE = os.path.join(BASE_DIR, "data", "dataset_metadata.json")
+
+# Helper functions for dataset metadata
+def load_dataset_metadata():
+    if not os.path.exists(DATASET_METADATA_FILE):
+        return {}
+    try:
+        with open(DATASET_METADATA_FILE, 'r') as f:
+            return json.load(f)
+    except (IOError, json.JSONDecodeError):
+        return {}
+
+def save_dataset_metadata(metadata):
+    try:
+        with open(DATASET_METADATA_FILE, 'w') as f:
+            json.dump(metadata, f, indent=2)
+    except IOError:
+        print(f"Error: Could not save dataset metadata to {DATASET_METADATA_FILE}")
 
 # Configure file uploads
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "data", "uploads")
@@ -378,6 +397,7 @@ def get_datasets():
         
         # Combine with default datasets
         all_datasets = []
+        dataset_metadata = load_dataset_metadata()
         
         # Add custom datasets first
         for name in collection_names:
@@ -385,17 +405,30 @@ def get_datasets():
             try:
                 coll = chroma_client.get_collection(name=name)
                 doc_count = coll.count()
+                metadata = dataset_metadata.get(name, {})
+                description = metadata.get("description", f"Custom dataset with {doc_count} entries")
+                author = metadata.get("author")
+                topic = metadata.get("topic")
+                linkedin_url = metadata.get("linkedin_url")
+                custom_instructions = metadata.get("custom_instructions")
+                last_update_date = metadata.get("last_update_date")
                 all_datasets.append({
                     "name": name, 
-                    "description": f"Custom dataset with {doc_count} entries",
+                    "description": description,
+                    "author": author,
+                    "topic": topic,
+                    "linkedin_url": linkedin_url,
+                    "custom_instructions": custom_instructions,
+                    "last_update_date": last_update_date,
                     "document_count": doc_count,
                     "is_custom": True
                 })
             except Exception as e:
                 print(f"Error getting collection info for {name}: {str(e)}")
+                description = dataset_metadata.get(name, {}).get("description", "Custom dataset")
                 all_datasets.append({
                     "name": name, 
-                    "description": f"Custom dataset",
+                    "description": description,
                     "is_custom": True
                 })
         
@@ -414,23 +447,98 @@ def get_datasets():
 @app.route('/api/datasets/<dataset_name>', methods=['DELETE'])
 def delete_dataset(dataset_name):
     """Delete a dataset by name."""
-    # Don't allow deleting default datasets
     if dataset_name in [d['name'] for d in DEFAULT_DATASETS]:
         return jsonify({"error": "Cannot delete default dataset"}), 400
     
+    deleted_from_chroma = False
+    deletion_messages = []
+    
     try:
-        # Check if the collection exists
-        try:
-            collection = chroma_client.get_collection(name=dataset_name)
-        except Exception:
-            return jsonify({"error": f"Dataset '{dataset_name}' not found"}), 404
-        
-        # Delete the collection
+        # Attempt to delete from Chroma
         chroma_client.delete_collection(name=dataset_name)
-        return jsonify({"success": True, "message": f"Dataset '{dataset_name}' deleted successfully"})
+        deleted_from_chroma = True 
+        deletion_messages.append(f"Collection '{dataset_name}' deleted from ChromaDB.")
+        print(f"Successfully deleted collection '{dataset_name}' from ChromaDB.")
     except Exception as e:
-        print(f"Error deleting dataset: {str(e)}")
-        return jsonify({"error": f"Failed to delete dataset: {str(e)}"}), 500
+        # Check if the collection still exists. If not, it's effectively deleted.
+        try:
+            chroma_client.get_collection(name=dataset_name)
+            # If it's still here, then the deletion failed for a more serious reason
+            error_msg = f"Failed to delete collection '{dataset_name}' from ChromaDB: {str(e)}"
+            deletion_messages.append(error_msg)
+            print(error_msg)
+        except Exception:
+            # Collection was not found by get_collection, so it's effectively gone from Chroma
+            deleted_from_chroma = True 
+            msg = f"Collection '{dataset_name}' not found in ChromaDB (considered successfully removed)."
+            deletion_messages.append(msg)
+            print(msg)
+            
+    # Attempt to delete from metadata
+    dataset_metadata = load_dataset_metadata()
+    if dataset_name in dataset_metadata:
+        del dataset_metadata[dataset_name]
+        save_dataset_metadata(dataset_metadata)
+        deleted_from_metadata = True
+        msg = f"Dataset '{dataset_name}' deleted from metadata."
+        deletion_messages.append(msg)
+        print(msg)
+    else:
+        deleted_from_metadata = True # Not present is as good as deleted for this step
+        msg = f"Dataset '{dataset_name}' not found in metadata (considered successfully removed from metadata)."
+        deletion_messages.append(msg)
+        print(msg)
+
+    if deleted_from_chroma and deleted_from_metadata:
+        return jsonify({"success": True, "message": f"Dataset '{dataset_name}' successfully deleted. Details: {' '.join(deletion_messages)}"})
+    else:
+        # Even if one part failed but the other succeeded, it's a partial success from user POV if dataset is gone from list.
+        # The key is whether it will be gone from the UI. If metadata is deleted, it will be.
+        if deleted_from_metadata:
+             return jsonify({"success": True, "message": f"Dataset '{dataset_name}' removed. Status: {' '.join(deletion_messages)}"})
+        else:
+            # This implies metadata deletion failed, which is less likely.
+            return jsonify({"error": f"Failed to fully delete dataset '{dataset_name}'. Status: {' '.join(deletion_messages)}"}), 500
+
+@app.route('/api/datasets/<dataset_name>', methods=['PUT'])
+def update_dataset_metadata_route(dataset_name):
+    """Update metadata for an existing dataset."""
+    data_to_update = request.json
+    if not data_to_update:
+        return jsonify({"error": "No data provided for update"}), 400
+
+    dataset_metadata = load_dataset_metadata()
+
+    if dataset_name not in dataset_metadata:
+        # Also check if it's a default dataset, which shouldn't be "updated" via this mechanism
+        if any(d['name'] == dataset_name for d in DEFAULT_DATASETS):
+             return jsonify({"error": "Default datasets cannot be modified."}), 403
+        return jsonify({"error": "Dataset not found"}), 404
+
+    # Update only the allowed fields
+    # Ensure all expected fields are present even if empty, to allow clearing them
+    current_meta = dataset_metadata.get(dataset_name, {})
+    current_meta["description"] = data_to_update.get("description", current_meta.get("description", ""))
+    current_meta["author"] = data_to_update.get("author", current_meta.get("author", ""))
+    current_meta["topic"] = data_to_update.get("topic", current_meta.get("topic", ""))
+    current_meta["last_update_date"] = datetime.now().isoformat()  # Update the last update date
+    
+    linkedin_url = data_to_update.get("linkedin_url", "")
+    if linkedin_url:
+        current_meta["linkedin_url"] = linkedin_url
+    else:
+        current_meta.pop("linkedin_url", None)
+        
+    custom_instructions = data_to_update.get("custom_instructions", "")
+    if custom_instructions:
+        current_meta["custom_instructions"] = custom_instructions
+    else:
+        current_meta.pop("custom_instructions", None)
+
+    dataset_metadata[dataset_name] = current_meta
+    save_dataset_metadata(dataset_metadata)
+
+    return jsonify({"success": True, "message": f"Dataset '{dataset_name}' updated successfully."})
 
 @app.route('/api/process-documents', methods=['POST'])
 def process_documents():
@@ -519,6 +627,13 @@ def process_documents():
             ids=batch_ids
         )
     
+    # Store dataset description
+    dataset_description = request.json.get('dataset_description', '')
+    if dataset_description:
+        dataset_metadata = load_dataset_metadata()
+        dataset_metadata[dataset_name] = {"description": dataset_description}
+        save_dataset_metadata(dataset_metadata)
+    
     return jsonify({
         "status": "success",
         "message": f"Processed {len(documents)} text chunks from {len(doc_files)} documents",
@@ -534,6 +649,11 @@ def upload_documents():
         
         # Get dataset name and sanitize it for ChromaDB requirements
         dataset_name = request.form.get('dataset_name', 'New Dataset')
+        dataset_description = request.form.get('dataset_description', '')
+        dataset_author = request.form.get('dataset_author', '') # New field
+        dataset_topic = request.form.get('dataset_topic', '')   # New field
+        dataset_linkedin = request.form.get('dataset_linkedin', '') # New field
+        dataset_custom_instructions = request.form.get('dataset_custom_instructions', '') # New field
         
         # Sanitize the dataset name to meet ChromaDB requirements
         # 1. Replace spaces with hyphens
@@ -635,6 +755,26 @@ def upload_documents():
                 ids=batch_ids
             )
         
+        # Store dataset metadata
+        dataset_metadata = load_dataset_metadata()
+        current_metadata = dataset_metadata.get(dataset_name, {})
+        current_metadata["description"] = dataset_description
+        current_metadata["author"] = dataset_author
+        current_metadata["topic"] = dataset_topic
+        current_metadata["last_update_date"] = datetime.now().isoformat()  # Add last update date
+        if dataset_linkedin:
+            current_metadata["linkedin_url"] = dataset_linkedin
+        else: 
+            current_metadata.pop("linkedin_url", None) # Remove if empty or not provided
+        
+        if dataset_custom_instructions: # New field
+            current_metadata["custom_instructions"] = dataset_custom_instructions
+        else:
+            current_metadata.pop("custom_instructions", None) # Remove if not provided
+            
+        dataset_metadata[dataset_name] = current_metadata
+        save_dataset_metadata(dataset_metadata)
+        
         # Check if we actually got any text from the documents
         if len(documents) == 0:
             return jsonify({
@@ -656,6 +796,68 @@ def upload_documents():
     except Exception as e:
         print(f"Error in upload_documents: {str(e)}")
         return jsonify({"status": "error", "message": f"Server error: {str(e)}"}), 500
+
+# Folder API routes
+@app.route('/api/folders', methods=['GET'])
+def list_folders_route():
+    """List all folders."""
+    folders = chat_storage.list_folders()
+    return jsonify(folders)
+
+@app.route('/api/folders/<folder_id>', methods=['PUT'])
+def rename_folder_route(folder_id):
+    """Rename a folder."""
+    data = request.json
+    new_name = data.get('name', '').strip()
+    if not new_name:
+        return jsonify({'error': 'Missing new folder name'}), 400
+
+    # Load folders
+    folders = chat_storage.list_folders()
+    found = False
+    for folder in folders:
+        if folder['id'] == folder_id:
+            folder['name'] = new_name
+            folder['last_updated'] = time.time()
+            found = True
+            break
+    if not found:
+        return jsonify({'error': 'Folder not found'}), 404
+
+    # Save folders
+    # chat_storage does not have a save_folders, so we update the file directly
+    import os, json
+    folders_file = os.path.join(chat_storage.storage_dir, 'folders.json')
+    with open(folders_file, 'w') as f:
+        json.dump({'folders': folders}, f, indent=2)
+
+    return jsonify({'success': True, 'message': 'Folder renamed successfully.'})
+
+@app.route('/api/folders', methods=['POST'])
+def create_folder_route():
+    """Create a new folder."""
+    data = request.json
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'error': 'Missing folder name'}), 400
+    folder_id = chat_storage.create_folder(name)
+    return jsonify({'success': True, 'id': folder_id, 'name': name})
+
+@app.route('/api/folders/<folder_id>', methods=['DELETE'])
+def delete_folder_route(folder_id):
+    """Delete a folder and move its chats to the default folder."""
+    try:
+        # Move all chats in this folder to the default folder
+        chats_in_folder = chat_storage.list_chats(folder_id)
+        for chat in chats_in_folder:
+            chat_storage.move_chat_to_folder(chat['id'], 'default')
+        # Delete the folder
+        success = chat_storage.delete_folder(folder_id)
+        if not success:
+            return jsonify({'success': False, 'error': 'Folder not found'}), 404
+        return jsonify({'success': True, 'message': 'Folder deleted successfully'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # Chat API routes
 @app.route('/api/chats', methods=['GET'])
@@ -680,6 +882,27 @@ def create_chat():
         chat_storage.update_chat(chat_id, {"dataset": dataset})
     
     return jsonify({"id": chat_id})
+
+@app.route('/api/chats/<chat_id>/move', methods=['POST'])
+def move_chat_to_folder_route(chat_id):
+    """Move a chat to a specified folder."""
+    data = request.json
+    folder_id = data.get('folder_id')
+
+    if folder_id is None:
+        return jsonify({"error": "Missing folder_id"}), 400
+
+    # Optional: Check if the target folder exists (though chat_storage.move currently doesn't)
+    # folders = chat_storage.list_folders()
+    # if not any(f['id'] == folder_id for f in folders):
+    #     return jsonify({"error": f"Target folder {folder_id} not found"}), 404
+
+    success = chat_storage.move_chat_to_folder(chat_id, folder_id)
+    if not success:
+        # This implies chat_id was not found by chat_storage.update_chat
+        return jsonify({"error": f"Chat {chat_id} not found or failed to update."}), 404 
+    
+    return jsonify({"success": True, "message": f"Chat {chat_id} moved to folder {folder_id}"})
 
 @app.route('/api/chats/<chat_id>', methods=['GET'])
 def get_chat(chat_id):
@@ -749,15 +972,18 @@ def delete_chat(chat_id):
 
 @app.route('/api/chats/<chat_id>/messages', methods=['POST'])
 def add_message(chat_id):
-    """Add a message to a chat and get AI response."""
+    print(f"[CHAT_API] add_message called for chat_id: {chat_id}")
     data = request.json
+    print(f"[CHAT_API] Request data: {data}")
     user_message = data.get('message', '')
     dataset_name = data.get('dataset')
     
-    # Get the chat
+    print("[CHAT_API] Attempting to get chat from storage...")
     chat = chat_storage.get_chat(chat_id)
     if chat is None:
+        print(f"[CHAT_API] Chat {chat_id} not found.")
         return jsonify({"error": "Chat not found"}), 404
+    print(f"[CHAT_API] Chat {chat_id} retrieved.")
     
     # Use the chat's dataset if not specified
     if not dataset_name:
@@ -766,325 +992,15 @@ def add_message(chat_id):
         # Update the chat's dataset if it changed
         chat_storage.update_chat(chat_id, {"dataset": dataset_name})
     
-    # Add user message
-    chat_storage.add_message(chat_id, "user", user_message)
-    
-    # Extract chat history for context
-    history = []
-    for msg in chat.get('messages', []):
-        if msg['role'] in ['user', 'assistant']:
-            history.append({"role": msg['role'], "content": msg['content']})
-    
-    # Retrieve context from Chroma based on user query
-    collection = chroma_client.get_or_create_collection(name=dataset_name)
-    
-    # Get the document count to determine how many results we can request
-    doc_count = collection.count()
-    n_results = min(5, max(1, doc_count))  # Request at most 5, but at least 1 if available
-    
-    # Handle the case of an empty collection
-    if doc_count == 0:
-        results = {
-            'documents': [["No documents found in the selected dataset. Please upload documents or select a different dataset."]],
-            'metadatas': [[{"source": "System", "page": 0}]]
-        }
-    else:
-        # Import the document processor for advanced querying
-        from app.utils.document_processor import LegalDocumentProcessor
-        
-        # Initialize document processor with the same settings as configured globally
-        doc_processor = LegalDocumentProcessor(
-            embedding_model=EMBEDDING_MODEL,
-            chroma_path=CHROMA_DIR,
-            device=device
-        )
-        
-        # Use advanced query with hybrid search and reranking
-        results = doc_processor.query_dataset(
-            dataset_name=dataset_name,
-            query=user_message,
-            n_results=n_results,
-            use_hybrid_search=True,
-            use_reranking=True
-        )
-    
-    context = '\n\n'.join(results['documents'][0])
-    
-    # Extract sources information for better citation
-    sources = []
-    for doc, meta in zip(results['documents'][0], results['metadatas'][0]):
-        source_info = {
-            "source": meta.get("source", "Unknown"),
-            "page": meta.get("page", meta.get("part", 0)),
-            "snippet": doc[:150] + "..." if len(doc) > 150 else doc  # Short preview
-        }
-        sources.append(source_info)
-    
-    # Create enhanced prompt for LLM with Chain of Thought reasoning
-    system_message = f"""You are a legal expert specializing in international sanctions regulations.
-    
-    # Instructions
-    - Use the provided context to analyze the user's question thoroughly
-    - Implement chain-of-thought reasoning by breaking down your analysis step by step
-    - First carefully examine the relevant sections from the provided context
-    - Think about what legal principles apply to this situation
-    - Consider multiple perspectives and interpretations if applicable
-    - Draw connections between different parts of the context
-    - Formulate a comprehensive and legally sound analysis
-    - Cite specific articles, sections, or provisions when possible
-    - Clearly separate your reasoning process from your final conclusion
-    - If you don't know the answer or it's not in the context, state this clearly
-    
-    # Output Format
-    Structure your response with these sections:
-    1. SOURCES: A brief bulleted list of the most relevant source documents you're drawing from
-    2. ANALYSIS: Your step-by-step reasoning about the question (this should be detailed)
-    3. APPLICABLE PROVISIONS: Specific articles, sections, or legal provisions that apply
-    4. CONCLUSION: Your final answer based on the analysis
-    
-    # Context
-    {context}
-    """
-    
-    # First create a placeholder message for immediate feedback
-    placeholder_metadata = {
-        "dataset": dataset_name,
-        "sources": sources,
-        "processing": True  # Flag to indicate processing
-    }
-    
-    # Add placeholder
-    message_id = chat_storage.add_message(chat_id, "assistant", "Processing your request...", placeholder_metadata)
-    
-    try:
-        # Call LLM API with enhanced prompt
-        response = llm_client.generate_with_rag(
-            query=user_message,
-            context=system_message,
-            chat_history=history[-10:] if history else [],  # Use last 5 turns (10 messages)
-            temperature=0.1  # Lower temperature for more analytical responses
-        )
-        
-        # Now update the message with the actual response
-        # Get the current chat
-        current_chat = chat_storage.get_chat(chat_id)
-        if current_chat:
-            # Find our placeholder message
-            for i, msg in enumerate(current_chat.get('messages', [])):
-                if msg.get('metadata', {}).get('processing') and msg.get('role') == 'assistant':
-                    # Update the message with actual content
-                    current_chat['messages'][i]['content'] = response
-                    # Remove the processing flag
-                    if 'processing' in current_chat['messages'][i]['metadata']:
-                        del current_chat['messages'][i]['metadata']['processing']
-                    break
-                    
-            # Auto-name all chats based on the assistant response
-            if len(current_chat.get('messages', [])) == 2:  # User message + Assistant response
-                # Always generate a title from the AI response, regardless of current title
-                new_title = ""
-                
-                # Try to get title from conclusion first
-                if "CONCLUSION:" in response:
-                    title_text = response.split("CONCLUSION:")[1].strip()
-                    new_title = title_text.split("\n")[0][:50]
-                # Then try analysis
-                elif "ANALYSIS:" in response:
-                    title_text = response.split("ANALYSIS:")[1].strip()
-                    new_title = title_text.split("\n")[0][:50]
-                # Fallback to first line
-                else:
-                    new_title = response.split("\n")[0][:50]
-                
-                # Add ellipsis if truncated
-                if len(new_title) == 50:
-                    new_title += "..."
-                
-                # Update the title if we got something meaningful
-                if new_title.strip():
-                    current_chat['title'] = new_title
-            
-            # Update timestamp
-            current_chat['updated_at'] = time.time()
-            
-            # Save the updated chat
-            chat_file = os.path.join(chat_storage.storage_dir, f"{chat_id}.json")
-            with open(chat_file, 'w') as f:
-                json.dump(current_chat, f, indent=2)
-        
-        # Format source context for the response
-        source_context = "\n\n".join([f"Source: {s['source']} (Page/Section: {s['page']})\nPreview: {s['snippet']}" for s in sources])
-        
-        return jsonify({
-            'response': response,
-            'context': source_context,
-            'dataset': dataset_name,
-            'raw_context': context
-        })
-        
-    except Exception as e:
-        error_message = f"I'm sorry, I encountered an error processing your request. Please try again later."
-        print(f"Error calling LLM API: {str(e)}")
-        
-        # Add error message to chat
-        chat_storage.add_message(chat_id, "assistant", error_message, {"error": str(e)})
-        
-        return jsonify({
-            'response': error_message,
-            'error': str(e)
-        }), 500
-
-@app.route('/api/folders', methods=['GET'])
-def list_folders():
-    """List all folders."""
-    folders = chat_storage.list_folders()
-    return jsonify(folders)
-
-@app.route('/api/folders', methods=['POST'])
-def create_folder():
-    """Create a new folder."""
-    data = request.json
-    name = data.get('name', 'New Folder')
-    folder_id = chat_storage.create_folder(name)
-    return jsonify({"id": folder_id, "name": name})
-
-@app.route('/api/folders/<folder_id>', methods=['DELETE'])
-def delete_folder(folder_id):
-    """Delete a folder."""
-    success = chat_storage.delete_folder(folder_id)
-    
-    if not success:
-        return jsonify({"error": "Folder not found"}), 404
-    
-    return jsonify({"success": True})
-
-@app.route('/api/chats/<chat_id>/move', methods=['POST'])
-def move_chat(chat_id):
-    """Move a chat to a different folder."""
-    data = request.json
-    folder_id = data.get('folder_id')
-    
-    if not folder_id:
-        return jsonify({"error": "Folder ID is required"}), 400
-    
-    success = chat_storage.move_chat_to_folder(chat_id, folder_id)
-    
-    if not success:
-        return jsonify({"error": "Chat not found"}), 404
-    
-    return jsonify({"success": True})
-
-@app.route('/api/feedback', methods=['POST'])
-def submit_feedback():
-    """Submit user feedback on a response."""
-    data = request.json
-    chat_id = data.get('chat_id')
-    message_id = data.get('message_id')
-    feedback_type = data.get('feedback_type')  # 'helpful', 'not_helpful', 'inaccurate', etc.
-    feedback_text = data.get('feedback_text', '')
-    
-    if not chat_id or not message_id or not feedback_type:
-        return jsonify({"error": "Missing required parameters"}), 400
-    
-    # Get the chat
-    chat = chat_storage.get_chat(chat_id)
-    if not chat:
-        return jsonify({"error": "Chat not found"}), 404
-    
-    # Find the specific message
-    message = None
-    for msg in chat.get('messages', []):
-        if msg.get('id') == message_id:
-            message = msg
-            break
-    
-    if not message:
-        return jsonify({"error": "Message not found"}), 404
-    
-    # Only allow feedback on assistant messages
-    if message.get('role') != 'assistant':
-        return jsonify({"error": "Feedback can only be provided on assistant messages"}), 400
-    
-    # Add feedback to message metadata
-    if 'metadata' not in message:
-        message['metadata'] = {}
-    
-    if 'feedback' not in message['metadata']:
-        message['metadata']['feedback'] = []
-    
-    # Add timestamp to feedback
-    feedback_entry = {
-        'timestamp': time.time(),
-        'type': feedback_type,
-        'text': feedback_text
-    }
-    
-    message['metadata']['feedback'].append(feedback_entry)
-    
-    # Update the chat
-    chat_storage.update_chat(chat_id, {"messages": chat['messages']})
-    
-    # Store feedback for analysis (optional)
-    try:
-        store_feedback_for_analysis(chat_id, message_id, feedback_entry, message.get('content', ''))
-    except Exception as e:
-        print(f"Error storing feedback for analysis: {str(e)}")
-    
-    return jsonify({"success": True})
-
-def store_feedback_for_analysis(chat_id, message_id, feedback, content):
-    """Store feedback in a dedicated file for future analysis."""
-    import os
-    import json
-    from datetime import datetime
-    
-    # Create feedback directory if it doesn't exist
-    feedback_dir = os.path.join(BASE_DIR, "data", "feedback")
-    os.makedirs(feedback_dir, exist_ok=True)
-    
-    # Get current date for organizing feedback
-    current_date = datetime.now().strftime("%Y%m%d")
-    feedback_file = os.path.join(feedback_dir, f"feedback_{current_date}.jsonl")
-    
-    # Prepare feedback data
-    feedback_data = {
-        "chat_id": chat_id,
-        "message_id": message_id,
-        "timestamp": feedback["timestamp"],
-        "feedback_type": feedback["type"],
-        "feedback_text": feedback["text"],
-        "content_snippet": content[:500] + ("..." if len(content) > 500 else ""),
-        "created_at": datetime.now().isoformat()
-    }
-    
-    # Append to feedback file
-    with open(feedback_file, "a") as f:
-        f.write(json.dumps(feedback_data) + "\n")
-
-@app.route('/api/chats/<chat_id>/messages/stream', methods=['POST'])
-def stream_message(chat_id):
-    """Add a message to a chat and get streaming AI response."""
-    from flask import Response, stream_with_context
-    import json
-    
-    data = request.json
-    user_message = data.get('message', '')
-    dataset_name = data.get('dataset')
-    
-    # Get the chat
-    chat = chat_storage.get_chat(chat_id)
-    if chat is None:
-        return jsonify({"error": "Chat not found"}), 404
-    
-    # Use the chat's dataset if not specified
-    if not dataset_name:
-        dataset_name = chat.get('dataset', 'Default')
-    elif dataset_name != chat.get('dataset'):
-        # Update the chat's dataset if it changed
-        chat_storage.update_chat(chat_id, {"dataset": dataset_name})
+    # Load dataset-specific custom instructions
+    dataset_metadata = load_dataset_metadata()
+    specific_dataset_meta = dataset_metadata.get(dataset_name, {})
+    custom_instructions_for_dataset = specific_dataset_meta.get("custom_instructions", "")
     
     # Add user message
+    print("[CHAT_API] Attempting to add user message to storage...")
     chat_storage.add_message(chat_id, "user", user_message)
+    print("[CHAT_API] User message added to storage.")
     
     # Extract chat history for context
     history = []
@@ -1103,8 +1019,9 @@ def stream_message(chat_id):
     if doc_count == 0:
         context = "No documents found in the selected dataset. Please upload documents or select a different dataset."
         sources = [{"source": "System", "page": 0, "snippet": "No documents available"}]
+        print("[CHAT_API] No documents in dataset, using default context.")
     else:
-        # Import the document processor for advanced querying
+        print("[CHAT_API] Attempting to query dataset for context...")
         from app.utils.document_processor import LegalDocumentProcessor
         
         # Initialize document processor with the same settings as configured globally
@@ -1122,6 +1039,7 @@ def stream_message(chat_id):
             use_hybrid_search=True,
             use_reranking=True
         )
+        print("[CHAT_API] Dataset query complete.")
         
         context = '\n\n'.join(results['documents'][0])
         
@@ -1136,31 +1054,46 @@ def stream_message(chat_id):
             sources.append(source_info)
     
     # Create enhanced prompt for LLM with Chain of Thought reasoning
-    system_message = f"""You are a legal expert specializing in international sanctions regulations.
+    # Define the common suffix for the prompt
+    common_prompt_suffix = f"""# Output Format
+Structure your response with these sections:
+1. SOURCES: A brief bulleted list of the most relevant source documents you're drawing from
+2. ANALYSIS: Your step-by-step reasoning about the question (this should be detailed)
+3. APPLICABLE PROVISIONS: Specific articles, sections, or legal provisions that apply
+4. CONCLUSION: Your final answer based on the analysis
+
+# Context
+{context}
+"""
+
+    if custom_instructions_for_dataset:
+        # Use custom instructions as the main persona/task for the AI for this dataset
+        system_message = f"""{custom_instructions_for_dataset}
+
+{common_prompt_suffix}"""
+        print(f"[CHAT_API] Using custom instructions for dataset {dataset_name}: {custom_instructions_for_dataset[:100]}...")
+    else:
+        # Default system message if no custom instructions for the dataset
+        default_general_instructions = f"""You are a legal expert specializing in international sanctions regulations.
+
+# Instructions
+- Use the provided context to analyze the user's question thoroughly
+- Implement chain-of-thought reasoning by breaking down your analysis step by step
+- First carefully examine the relevant sections from the provided context
+- Think about what legal principles apply to this situation
+- Consider multiple perspectives and interpretations if applicable
+- Draw connections between different parts of the context
+- Formulate a comprehensive and legally sound analysis
+- Cite specific articles, sections, or provisions when possible
+- Clearly separate your reasoning process from your final conclusion
+- If you don't know the answer or it's not in the context, state this clearly"""
+        system_message = f"""{default_general_instructions}
+
+{common_prompt_suffix}"""
+        print(f"[CHAT_API] Using default system instructions for dataset {dataset_name}")
     
-    # Instructions
-    - Use the provided context to analyze the user's question thoroughly
-    - Implement chain-of-thought reasoning by breaking down your analysis step by step
-    - First carefully examine the relevant sections from the provided context
-    - Think about what legal principles apply to this situation
-    - Consider multiple perspectives and interpretations if applicable
-    - Draw connections between different parts of the context
-    - Formulate a comprehensive and legally sound analysis
-    - Cite specific articles, sections, or provisions when possible
-    - Clearly separate your reasoning process from your final conclusion
-    - If you don't know the answer or it's not in the context, state this clearly
-    
-    # Output Format
-    Structure your response with these sections:
-    1. SOURCES: A brief bulleted list of the most relevant source documents you're drawing from
-    2. ANALYSIS: Your step-by-step reasoning about the question (this should be detailed)
-    3. APPLICABLE PROVISIONS: Specific articles, sections, or legal provisions that apply
-    4. CONCLUSION: Your final answer based on the analysis
-    
-    # Context
-    {context}
-    """
-    
+    print(f"[CHAT_API] FINAL System Prompt for LLM:\n------\n{system_message}\n------")
+
     # Initialize variables for response tracking
     full_response = ""
     saved_response_length = 0
@@ -1174,7 +1107,9 @@ def stream_message(chat_id):
     }
     
     # Add placeholder message that will be updated as streaming progresses
+    print("[CHAT_API] Attempting to add assistant placeholder message to storage...")
     chat_storage.add_message(chat_id, "assistant", "Generating response...", metadata)
+    print("[CHAT_API] Assistant placeholder message added.")
     
     # Now get the updated chat to find the message ID
     updated_chat = chat_storage.get_chat(chat_id)
@@ -1280,6 +1215,7 @@ def stream_message(chat_id):
             # Start with an empty string event to establish connection
             yield "data: \n\n"
             
+            print("[CHAT_API] In generate(): About to call llm_client.stream_with_rag")
             # Stream the LLM response
             for chunk in llm_client.stream_with_rag(
                 query=user_message,
@@ -1287,15 +1223,16 @@ def stream_message(chat_id):
                 chat_history=history[-10:] if history else [],
                 temperature=0.1
             ):
+                print(f"[CHAT_API] In generate(): Received chunk: {chunk[:50]}...")
                 full_response += chunk
                 yield f"data: {json.dumps({'chunk': chunk})}\n\n"
                 
-                # Update saved message periodically (every 200 chars)
                 if len(full_response) - saved_response_length > 200:
                     update_streaming_message(full_response)
                     saved_response_length = len(full_response)
-                    print(f"Updated streaming message, now at {saved_response_length} chars")
+                    print(f"[CHAT_API] In generate(): Updated streaming message, now at {saved_response_length} chars")
             
+            print("[CHAT_API] In generate(): Finished iterating llm_client.stream_with_rag")
             # Yield a completion event 
             yield f"data: {json.dumps({'done': True})}\n\n"
             
@@ -1318,14 +1255,14 @@ def stream_message(chat_id):
     # The @after_this_request handler was unreliable for saving messages
     # We now save during streaming instead
     
+    print("[CHAT_API] Returning streaming response object.")
     # Return streaming response
     return Response(
         stream_with_context(generate()),
         mimetype="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # Disable Nginx buffering
-            "Connection": "keep-alive"
+            "X-Accel-Buffering": "no"  # Disable Nginx buffering
         }
     )
 

@@ -56,9 +56,8 @@
         <div id="sidebar" class="w-72 bg-gray-800 text-white flex flex-col">
             <!-- Logo and title -->
             <div class="p-4 border-b border-gray-700 flex flex-col items-center">
-                <h1 class="text-xl font-bold mb-2">MimIA</h1>
-                <div class="w-16 h-16 bg-gray-200 rounded-lg overflow-hidden flex items-center justify-center">
-                    <img id="app-logo" src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo" class="max-w-full max-h-full">
+                <div class="w-40 h-40 rounded-lg overflow-hidden flex items-center justify-center bg-transparent">
+                    <img id="app-logo" src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo" style="max-width: 100%; max-height: 100%; object-fit: contain;">
                 </div>
             </div>
             
@@ -101,7 +100,7 @@
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                         </svg>
-                        Upload Documents
+                        Create dataset
                     </button>
                     <button onclick="submitFeedback()" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700 flex items-center">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -240,305 +239,171 @@
         
         // Event listeners
         newChatBtn.addEventListener('click', createNewChat);
-        newFolderBtn.addEventListener('click', createNewFolder);
+        newFolderBtn.addEventListener('click', () => {
+            console.log('New Folder button clicked');
+            createNewFolder();
+        });
         
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+            console.log('[SendMessage] Form submitted.');
             const message = userInput.value.trim();
-            if (!message) return;
-            
-            // Clear input
-            userInput.value = '';
-            
-            // Create a chat if we don't have one
-            if (!currentChatId) {
-                await createNewChat();
+            if (!message) {
+                console.log('[SendMessage] Message input is empty.');
+                return;
             }
-            
+
             // Add user message to UI
             addMessage('user', message);
-            
+            userInput.value = ''; // Clear input
+
+            // Show thinking indicator
+            const thinkingId = showThinking();
+            console.log(`[SendMessage] User message: ${message}, Current dataset: ${currentDataset}, Current chat ID: ${currentChatId}`);
+
             try {
-                // Show thinking animation before streaming starts
-                const thinkingId = showThinking();
+                // If this is the first message in a new chat, create the chat first
+                if (!currentChatId) {
+                    console.log('[SendMessage] No currentChatId, attempting to create new chat.');
+                    const createResponse = await fetch('/api/chats', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ title: "New Chat", dataset: currentDataset })
+                    });
+                    console.log('[SendMessage] Create new chat response status:', createResponse.status);
+                    if (!createResponse.ok) {
+                        const errorData = await createResponse.json().catch(() => ({ error: 'Failed to parse error from create chat' }));
+                        console.error('[SendMessage] Error creating new chat:', errorData);
+                        removeThinking(thinkingId);
+                        addMessage('assistant', `Error creating chat: ${errorData.error || createResponse.statusText}`, null, true);
+                        return;
+                    }
+                    const chatData = await createResponse.json();
+                    currentChatId = chatData.id;
+                    currentChatTitle.textContent = 'New Chat'; 
+                    document.getElementById('rename-chat-btn').style.display = 'block';
+                    console.log(`[SendMessage] New chat created with ID: ${currentChatId}`);
+                    
+                    fetch('/api/save-last-chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ chat_id: currentChatId })
+                    }).catch(err => console.error('[SendMessage] Error saving last chat:', err));
+
+                    await loadChats();
+                }
+
+                console.log(`[SendMessage] Sending message to /api/chats/${currentChatId}/messages`);
+                const response = await fetch(`/api/chats/${currentChatId}/messages`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        dataset: currentDataset
+                    }),
+                });
+                console.log('[SendMessage] Add message response status:', response.status);
+
+                removeThinking(thinkingId); // Remove thinking indicator *after* the initial fetch attempt
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: 'Failed to parse error from add message' }));
+                    console.error('[SendMessage] Error response from add message:', errorData);
+                    addMessage('assistant', `Error: ${errorData.error || response.statusText}`, null, true);
+                    return;
+                }
                 
-                // Create a placeholder for the assistant message with a unique ID
+                // userInput.value = ''; // Already cleared earlier
+                
+                // Create a placeholder for the assistant's message with a unique ID
                 const messageId = `streaming-message-${Date.now()}`;
                 const assistantDiv = document.createElement('div');
                 assistantDiv.className = 'flex justify-start';
                 assistantDiv.id = messageId;
                 
-                const assistantContent = document.createElement('div');
-                assistantContent.className = 'max-w-3xl rounded-lg p-4 bg-gray-100';
-                assistantContent.innerHTML = `<div id="${messageId}-content" class="streaming-content"></div>`;
+                const assistantBubble = document.createElement('div');
+                assistantBubble.className = 'max-w-3xl rounded-lg p-4 bg-gray-100'; // Standard assistant bubble style
+                assistantBubble.innerHTML = `<div id="${messageId}-content" class="streaming-content"></div>`;
                 
-                assistantDiv.appendChild(assistantContent);
-                
-                // Add placeholder to the chat but keep it hidden until we receive data
-                assistantDiv.style.display = 'none';
+                assistantDiv.appendChild(assistantBubble);
                 chatMessages.appendChild(assistantDiv);
                 window.scrollTo(0, document.body.scrollHeight);
-                
-                // Set up streaming connection
-                try {
-                    const contentContainer = document.getElementById(`${messageId}-content`);
-                    const streamUrl = `/api/chats/${currentChatId}/messages/stream`;
-                    
-                    // Create POST request to streaming endpoint
-                    const streamResponse = await fetch(streamUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            message: message,
-                            dataset: currentDataset
-                        }),
-                    });
-                    
-                    // Create reader for response body stream
-                    const reader = streamResponse.body.getReader();
-                    const decoder = new TextDecoder();
-                    let fullResponse = '';
-                    
-                    // Read stream chunks
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        if (done) break;
+
+                const contentContainer = document.getElementById(`${messageId}-content`);
+                const reader = response.body.getReader(); // Use the response from the existing fetch call
+                const decoder = new TextDecoder();
+                let fullResponse = '';
                         
-                        // Decode chunk
-                        const chunk = decoder.decode(value, { stream: true });
-                        
-                        // Process SSE-formatted chunks
-                        const lines = chunk.split('\n\n');
-                        for (const line of lines) {
-                            if (line.startsWith('data: ')) {
-                                const eventData = line.slice(6);
-                                if (eventData) {
-                                    try {
-                                        const data = JSON.parse(eventData);
-                                        
-                                        // Handle text chunk
-                                        if (data.chunk) {
-                                            // This is our first chunk of data, remove thinking animation and show message
-                                            if (fullResponse === '') {
-                                                removeThinking(thinkingId);
-                                                document.getElementById(messageId).style.display = 'flex';
-                                            }
-                                            
-                                            fullResponse += data.chunk;
-                                            
-                                            // Apply streaming markdown formatting
-                                            let formattedResponse = fullResponse;
-                                            
-                                            // Enhance headings for streaming display
-                                            formattedResponse = formattedResponse
-                                                .replace(/# (SOURCES|ANALYSIS|APPLICABLE PROVISIONS|CONCLUSION):/g, 
-                                                    '### $1:')
-                                                .replace(/\n(SOURCES|ANALYSIS|APPLICABLE PROVISIONS|CONCLUSION):/g, 
-                                                    '\n### $1:');
-                                            
-                                            contentContainer.innerHTML = marked.parse(formattedResponse);
-                                            
-                                            // Style the sections as they appear
-                                            const sections = contentContainer.querySelectorAll('h3');
-                                            sections.forEach(section => {
-                                                section.className = 'text-lg font-bold mt-3 mb-2 text-blue-800';
-                                                
-                                                // Special styling for each section
-                                                if (section.textContent.includes('SOURCES')) {
-                                                    section.className += ' border-b pb-1 border-blue-300';
-                                                } else if (section.textContent.includes('ANALYSIS')) {
-                                                    section.className += ' border-b pb-1 border-blue-300';
-                                                } else if (section.textContent.includes('APPLICABLE PROVISIONS')) {
-                                                    section.className += ' border-b pb-1 border-blue-300';
-                                                } else if (section.textContent.includes('CONCLUSION')) {
-                                                    section.className += ' border-b pb-1 border-blue-300 mt-4';
-                                                }
-                                            });
-                                        }
-                                        
-                                        // Handle completion
-                                        if (data.done) {
-                                            // Make sure the thinking animation is removed
-                                            removeThinking(thinkingId);
-                                            // Make sure the message is visible
-                                            document.getElementById(messageId).style.display = 'flex';
-                                            // After streaming completes, fetch the context sources
-                                            fetchMessageContext(currentChatId, fullResponse);
-                                            break;
-                                        }
-                                        
-                                        // Handle error
-                                        if (data.error) {
-                                            // Make sure the thinking animation is removed
-                                            removeThinking(thinkingId);
-                                            // Make sure the message is visible
-                                            document.getElementById(messageId).style.display = 'flex';
-                                            contentContainer.innerHTML = `<div class="text-red-600">${data.error}</div>`;
-                                            break;
-                                        }
-                                    } catch (e) {
-                                        console.error('Error parsing streaming data:', e, eventData);
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        // After streaming completes, fetch the full message details to get context/sources
+                        // The backend's finalize_message should have updated the chat storage
+                        await loadChat(currentChatId); // This will re-render the chat with the final message from storage
+                        // The placeholder streaming-message-xxxx div will be removed when loadChat clears messages.
+                        break;
+                    }
+                    
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const eventData = line.slice(6);
+                            if (eventData.trim()) {
+                                try {
+                                    const data = JSON.parse(eventData);
+                                    if (data.chunk) {
+                                        fullResponse += data.chunk;
+                                        let formattedResponse = fullResponse;
+                                        // Formatting logic (headings, etc.) can remain here
+                                        formattedResponse = formattedResponse
+                                            .replace(/# (SOURCES|ANALYSIS|APPLICABLE PROVISIONS|CONCLUSION):/g, 
+                                                '### $1:')
+                                            .replace(/\n(SOURCES|ANALYSIS|APPLICABLE PROVISIONS|CONCLUSION):/g, 
+                                                '\n### $1:');
+                                        contentContainer.innerHTML = marked.parse(formattedResponse);
+                                        // Styling sections can remain here
+                                        const sections = contentContainer.querySelectorAll('h3');
+                                        sections.forEach(section => {
+                                            section.className = 'text-lg font-bold mt-3 mb-2 text-blue-800';
+                                            if (section.textContent.includes('SOURCES')) section.className += ' border-b pb-1 border-blue-300';
+                                            else if (section.textContent.includes('ANALYSIS')) section.className += ' border-b pb-1 border-blue-300';
+                                            else if (section.textContent.includes('APPLICABLE PROVISIONS')) section.className += ' border-b pb-1 border-blue-300';
+                                            else if (section.textContent.includes('CONCLUSION')) section.className += ' border-b pb-1 border-blue-300 mt-4';
+                                        });
+                                    } else if (data.done) {
+                                        // This is now handled by the main reader.read() loop's done condition
+                                        // await loadChat(currentChatId); // Moved to the main loop's done condition
+                                        // console.log("[SendMessage] Stream reported done by eventData.done");
+                                        // The break below will exit this inner loop, outer loop's done will handle it.
+                                        break; 
+                                    } else if (data.error) {
+                                        contentContainer.innerHTML = `<div class="text-red-600">Error: ${data.error}</div>`;
+                                        console.error('[SendMessage] Streaming error from eventData:', data.error);
+                                        break; // Exit inner loop
                                     }
+                                } catch (e) {
+                                    console.error('[SendMessage] Error parsing stream data JSON:', e, 'Data:', eventData);
                                 }
                             }
                         }
-                        
-                        // Auto-scroll as content grows
-                        window.scrollTo(0, document.body.scrollHeight);
                     }
-                    
-                } catch (streamError) {
-                    console.error('Streaming error:', streamError);
-                    
-                    // Make sure to remove the thinking animation before fallback
-                    removeThinking(thinkingId);
-                    
-                    // Fallback to non-streaming if streaming fails
-                    const response = await fetch(`/api/chats/${currentChatId}/messages`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            message: message,
-                            dataset: currentDataset
-                        }),
-                    });
-                    
-                    const data = await response.json();
-                    
-                    // Remove the streaming placeholder
-                    document.getElementById(messageId).remove();
-                    
-                    // Add assistant message to chat the traditional way
-                    addMessage('assistant', data.response, data.context);
-                }
-                
-                // Reload chats to update timestamps
-                await loadChats();
-                
-                // Function to fetch and add context after streaming
-                async function fetchMessageContext(chatId, content) {
-                    try {
-                        const response = await fetch(`/api/chats/${chatId}`);
-                        const chat = await response.json();
-                        
-                        // Find the latest assistant message
-                        let latestMessage = null;
-                        for (let i = chat.messages.length - 1; i >= 0; i--) {
-                            if (chat.messages[i].role === 'assistant') {
-                                latestMessage = chat.messages[i];
-                                break;
-                            }
-                        }
-                        
-                        if (latestMessage && latestMessage.metadata && latestMessage.metadata.sources) {
-                            const sources = latestMessage.metadata.sources;
-                            
-                            // Format sources for display
-                            const sourceContext = sources.map(s => 
-                                `Source: ${s.source} (Page/Section: ${s.page})\nPreview: ${s.snippet}`
-                            ).join('\n\n');
-                            
-                            // Add the context to the streamed message
-                            const streamingMsg = document.getElementById(messageId);
-                            if (streamingMsg) {
-                                const messageContent = streamingMsg.querySelector('.max-w-3xl');
-                                
-                                // Add feedback buttons
-                                const feedbackDiv = document.createElement('div');
-                                feedbackDiv.className = 'mt-3 flex items-center';
-                                feedbackDiv.innerHTML = `
-                                    <span class="text-sm text-gray-500 mr-2">Was this helpful?</span>
-                                    <button class="feedback-btn text-sm mr-2 px-2 py-1 rounded border hover:bg-green-100" data-type="helpful" data-msgid="${latestMessage.id}">👍 Yes</button>
-                                    <button class="feedback-btn text-sm mr-2 px-2 py-1 rounded border hover:bg-red-100" data-type="not_helpful" data-msgid="${latestMessage.id}">👎 No</button>
-                                    <button class="feedback-btn text-sm px-2 py-1 rounded border hover:bg-yellow-100" data-type="inaccurate" data-msgid="${latestMessage.id}">⚠️ Inaccurate</button>
-                                `;
-                                
-                                // Add feedback button event listeners
-                                feedbackDiv.querySelectorAll('.feedback-btn').forEach(btn => {
-                                    btn.addEventListener('click', async (e) => {
-                                        const feedbackType = e.target.dataset.type;
-                                        const messageId = e.target.dataset.msgid;
-                                        
-                                        // Optionally prompt for additional feedback
-                                        let feedbackText = '';
-                                        if (feedbackType === 'inaccurate') {
-                                            feedbackText = prompt('Please explain what was inaccurate:') || '';
-                                        }
-                                        
-                                        // Submit feedback
-                                        await fetch('/api/feedback', {
-                                            method: 'POST',
-                                            headers: {
-                                                'Content-Type': 'application/json',
-                                            },
-                                            body: JSON.stringify({
-                                                chat_id: currentChatId,
-                                                message_id: messageId,
-                                                feedback_type: feedbackType,
-                                                feedback_text: feedbackText
-                                            }),
-                                        });
-                                        
-                                        // Disable all feedback buttons and show confirmation
-                                        feedbackDiv.querySelectorAll('.feedback-btn').forEach(b => {
-                                            b.disabled = true;
-                                            b.classList.add('opacity-50');
-                                        });
-                                        
-                                        const thankMsg = document.createElement('span');
-                                        thankMsg.className = 'text-sm text-green-600 ml-2';
-                                        thankMsg.textContent = 'Thank you for your feedback!';
-                                        feedbackDiv.appendChild(thankMsg);
-                                    });
-                                });
-                                
-                                messageContent.appendChild(feedbackDiv);
-                                
-                                // Add context details
-                                const contextDetails = document.createElement('details');
-                                contextDetails.className = 'mt-4 text-sm';
-                                
-                                const summary = document.createElement('summary');
-                                summary.className = 'cursor-pointer text-blue-600 font-semibold';
-                                summary.textContent = '📄 View Reference Documents';
-                                
-                                const contextContent = document.createElement('div');
-                                contextContent.className = 'mt-2 p-3 bg-gray-100 rounded-lg border border-gray-300 text-gray-800 max-h-80 overflow-auto';
-                                
-                                // Format the context nicely
-                                const formattedContext = sourceContext.split('\n\n').map(source => {
-                                    return `<div class="mb-3 pb-3 border-b border-gray-200">
-                                            ${source.replace(/Source: ([^\n]+)/, '<strong class="text-blue-700">Source: $1</strong>')}
-                                            </div>`;
-                                }).join('');
-                                
-                                contextContent.innerHTML = formattedContext;
-                                contextDetails.appendChild(summary);
-                                contextDetails.appendChild(contextContent);
-                                
-                                messageContent.appendChild(contextDetails);
-                                
-                                // Remove the streaming ID to mark it as a regular message
-                                streamingMsg.removeAttribute('id');
-                            }
-                        }
-                        
-                    } catch (error) {
-                        console.error('Error fetching message context:', error);
+                    if (contentContainer.parentElement && contentContainer.parentElement.style.display === 'none'){
+                        contentContainer.parentElement.style.display = 'flex'; // Show message on first actual data
                     }
-                }
+                    window.scrollTo(0, document.body.scrollHeight);
+                } // End of while(true) for reader.read()
+                await loadChats(); // Refresh chat list in sidebar (timestamps)
+
             } catch (error) {
-                console.error('Error:', error);
-                // Make sure to remove the thinking animation if it exists
-                if (thinkingId) {
-                    removeThinking(thinkingId);
-                }
-                addMessage('assistant', 'Sorry, there was an error processing your request.', null, true);
+                console.error('[SendMessage] General error in sendMessage after initial fetch:', error);
+                // removeThinking(thinkingId); // thinkingId might be out of scope or already removed
+                const thinkingElement = document.querySelector("[id^='thinking-']");
+                if(thinkingElement) thinkingElement.remove();
+                addMessage('assistant', 'Sorry, I encountered an issue processing your request. Please try again.', null, true);
             }
         });
         
@@ -755,18 +620,28 @@
         async function loadFolders() {
             try {
                 const response = await fetch('/api/folders');
-                folders = await response.json();
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const newFolders = await response.json();
+                folders = newFolders; // Update global folders variable
+                console.log('Folders loaded:', folders);
                 await loadChats();  // This will trigger renderFoldersAndChats
             } catch (error) {
                 console.error('Error loading folders:', error);
+                foldersContainer.innerHTML = '<p class="text-red-500 p-2">Error loading folders. Check console.</p>';
             }
         }
         
         async function loadChats(folderId = null) {
             try {
-                // Always load all chats, we'll filter them in the UI as needed
                 const response = await fetch('/api/chats');
-                chats = await response.json();
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const newChats = await response.json();
+                chats = newChats; // Update global chats variable
+                console.log('Chats loaded:', chats);
                 renderFoldersAndChats();
                 
                 // If a folder ID was specified, simulate clicking on that folder
@@ -908,7 +783,7 @@
                                 // Format sources
                                 context = msg.metadata.sources.map(s => 
                                     `Source: ${s.source} (Page/Section: ${s.page || 0})\nPreview: ${s.snippet || 'No preview available'}`
-                                ).join('\n\n');
+                                ).join('\\n\n');
                             }
                             isError = !!msg.metadata.error;
                             isSystem = msg.metadata.isSystem === true;
@@ -1086,31 +961,26 @@
                 folderHeader.className = 'flex items-center justify-between p-2 rounded hover:bg-gray-700 cursor-pointer folder-item';
                 folderHeader.dataset.folderId = folder.id;
                 
-                // Make the folder a drop target
+                // Add context menu event listener for folders
+                folderHeader.addEventListener('contextmenu', handleFolderContextMenu);
+                // Restore drag-and-drop event listeners for folder headers
                 folderHeader.addEventListener('dragover', handleDragOver);
                 folderHeader.addEventListener('dragleave', handleDragLeave);
                 folderHeader.addEventListener('drop', handleDrop);
                 
-                // Expand/collapse indicator
-                const expandIndicator = folderChats.length > 0 ? '▼' : '▶';
-                
-                folderHeader.innerHTML = `
-                    <div class="flex items-center flex-1">
-                        <span class="folder-expand-icon mr-1 text-xs">${expandIndicator}</span>
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                        </svg>
-                        <span>${folder.name}</span>
-                        <span class="ml-2 text-xs text-gray-500">(${folderChats.length})</span>
-                    </div>
-                    ${folder.id !== 'default' ? `
-                        <button class="text-gray-400 hover:text-red-500 delete-folder-btn">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                        </button>
-                    ` : ''}
+                // Add folder name and icon
+                const folderNameContainer = document.createElement('div');
+                folderNameContainer.className = 'flex items-center flex-1';
+                folderNameContainer.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
+                    <span class="text-gray-300">${folder.name}</span>
                 `;
+                
+                folderHeader.appendChild(folderNameContainer);
+                folderHeader.appendChild(createFolderToggleButton(folder));
+                folderContainer.appendChild(folderHeader);
                 
                 // Create chats container
                 const chatsContainer = document.createElement('div');
@@ -1271,6 +1141,12 @@
         }
         
         function viewDatasets() {
+            // Remove any existing dataset modal first to ensure a clean state
+            const existingModalInstance = document.querySelector('body > .fixed.inset-0.bg-black.bg-opacity-50');
+            if (existingModalInstance) {
+                existingModalInstance.remove();
+            }
+
             // Fetch datasets from API
             fetch('/api/datasets')
                 .then(response => response.json())
@@ -1308,13 +1184,53 @@
                         
                         datasets.forEach(dataset => {
                             const datasetCard = document.createElement('div');
-                            datasetCard.className = `p-4 border rounded-lg cursor-pointer hover:bg-gray-50 ${dataset.name === currentDataset ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`;
+                            // Added relative positioning for the delete button
+                            datasetCard.className = `relative p-4 border rounded-lg cursor-pointer hover:bg-gray-50 ${dataset.name === currentDataset ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`;
                             datasetCard.dataset.datasetName = dataset.name;
                             datasetCard.dataset.isCustom = dataset.is_custom;
                             
+                            let deleteButtonHTML = '';
+                            if (dataset.is_custom) {
+                                deleteButtonHTML = `
+                                    <button class="absolute top-3 right-3 text-gray-500 hover:text-red-600 p-1 rounded-full focus:outline-none delete-dataset-btn-visible" data-dataset-name="${dataset.name}" title="Delete dataset">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                    <button class="absolute top-3 right-10 text-gray-500 hover:text-blue-600 p-1 rounded-full focus:outline-none edit-dataset-btn-visible" data-dataset-name="${dataset.name}" title="Edit dataset metadata">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                        </svg>
+                                    </button>
+                                `;
+                            }
+
+                            let authorHTML = '';
+                            if (dataset.author) {
+                                authorHTML = `<p class="text-xs text-gray-500 mt-1">Author: ${dataset.author}</p>`;
+                            }
+                            let topicHTML = '';
+                            if (dataset.topic) {
+                                topicHTML = `<p class="text-xs text-gray-500">Topic: ${dataset.topic}</p>`;
+                            }
+                            let linkedinHTML = '';
+                            if (dataset.linkedin_url) {
+                                linkedinHTML = `<p class="text-xs text-gray-500 truncate">LinkedIn: <a href="${dataset.linkedin_url}" target="_blank" class="text-blue-600 hover:underline">${dataset.linkedin_url}</a></p>`;
+                            }
+                            let lastUpdateHTML = '';
+                            const lastUpdate = dataset.last_update_date
+                                ? new Date(dataset.last_update_date).toLocaleString()
+                                : 'N/A';
+                            lastUpdateHTML = `<p class="text-xs text-gray-500">Last updated: ${lastUpdate}</p>`;
+
                             datasetCard.innerHTML = `
-                                <h3 class="font-semibold text-lg">${dataset.name}</h3>
-                                <p class="text-gray-600 text-sm">${dataset.description || 'No description available'}</p>
+                                ${deleteButtonHTML}
+                                <h3 class="font-semibold text-lg pr-8">${dataset.name}</h3>
+                                <p class="text-gray-600 text-sm mb-1">${dataset.description || 'No description available'}</p>
+                                ${authorHTML}
+                                ${topicHTML}
+                                ${linkedinHTML}
+                                ${lastUpdateHTML}
                                 ${dataset.is_custom ? 
                                     `<span class="inline-flex items-center px-2.5 py-0.5 mt-2 rounded-full text-xs font-medium ${dataset.document_count > 0 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
                                         ${dataset.document_count > 0 ? `${dataset.document_count} documents` : 'Empty dataset'}
@@ -1326,7 +1242,11 @@
                             // Add right-click context menu for dataset management
                             datasetCard.addEventListener('contextmenu', handleDatasetContextMenu);
                             
-                            datasetCard.addEventListener('click', () => {
+                            datasetCard.addEventListener('click', (e) => {
+                                // Prevent card click if delete button was clicked
+                                if (e.target.closest('.delete-dataset-btn-visible')) {
+                                    return;
+                                }
                                 // Set as current dataset
                                 currentDataset = dataset.name;
                                 
@@ -1353,6 +1273,35 @@
                             });
                             
                             datasetGrid.appendChild(datasetCard);
+
+                            // Add event listener for the new visible delete button
+                            if (dataset.is_custom) {
+                                const deleteBtn = datasetCard.querySelector('.delete-dataset-btn-visible');
+                                if (deleteBtn) {
+                                    deleteBtn.addEventListener('click', (e) => {
+                                        e.stopPropagation(); // Prevent card click
+                                        confirmDeleteDataset(dataset.name);
+                                    });
+                                }
+                            }
+                            // Add event listeners for new visible edit buttons on dataset cards
+                            if (dataset.is_custom) {
+                                const editBtn = datasetCard.querySelector('.edit-dataset-btn-visible');
+                                if (editBtn) {
+                                    editBtn.addEventListener('click', (e) => {
+                                        e.stopPropagation(); // Prevent card click
+                                        const datasetNameToEdit = e.currentTarget.dataset.datasetName;
+                                        // Find the full dataset object to pass its current metadata
+                                        const datasetToEdit = datasets.find(d => d.name === datasetNameToEdit);
+                                        if (datasetToEdit) {
+                                            showEditDatasetModal(datasetToEdit);
+                                        } else {
+                                            console.error("Could not find dataset object for editing:", datasetNameToEdit);
+                                            alert("Error: Could not retrieve dataset details for editing.");
+                                        }
+                                    });
+                                }
+                            }
                         });
                         
                         datasetsList.appendChild(datasetGrid);
@@ -1367,6 +1316,12 @@
                     document.getElementById('close-datasets-modal').addEventListener('click', () => {
                         document.body.removeChild(modalOverlay);
                     });
+
+                    // Event listeners for delete buttons were already being added individually above.
+                    // Removing the duplicated querySelectorAll for delete buttons.
+
+                    // Event listeners for edit buttons are also added individually above within the loop.
+                    // Removing the duplicated querySelectorAll for edit buttons.
                 })
                 .catch(error => {
                     console.error('Error fetching datasets:', error);
@@ -1381,9 +1336,15 @@
             
             const modalContent = document.createElement('div');
             modalContent.className = 'bg-white rounded-lg shadow-lg max-w-2xl w-full';
-            modalContent.innerHTML = `
-                <div class="p-6">
-                    <h2 class="text-2xl font-bold mb-4">Process Documents</h2>
+            
+            // Create the inner content div that will be scrollable
+            const scrollableContent = document.createElement('div');
+            scrollableContent.className = 'p-6'; // Keep existing padding
+            scrollableContent.style.maxHeight = '75vh'; // Set max height (e.g., 75% of viewport height)
+            scrollableContent.style.overflowY = 'auto'; // Enable vertical scrollbar if content overflows
+
+            scrollableContent.innerHTML = `
+                    <h2 class="text-2xl font-bold mb-4">Create dataset</h2>
                     
                     <form id="document-upload-form">
                         <div class="mb-4">
@@ -1399,9 +1360,41 @@
                                 <i>Note:</i> Name will be sanitized - spaces and special characters will be replaced with hyphens
                             </p>
                         </div>
+
+                        <div class="mb-4">
+                            <label class="block text-gray-700 mb-2">Author</label>
+                            <input
+                                type="text"
+                                id="dataset-author"
+                                placeholder="Enter author's name"
+                                class="w-full border rounded px-3 py-2"
+                                required
+                            />
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="block text-gray-700 mb-2">Topic</label>
+                            <input
+                                type="text"
+                                id="dataset-topic"
+                                placeholder="e.g., EU Competition Law, US Sanctions"
+                                class="w-full border rounded px-3 py-2"
+                                required
+                            />
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="block text-gray-700 mb-2">LinkedIn Profile URL (Optional)</label>
+                            <input
+                                type="url"
+                                id="dataset-linkedin"
+                                placeholder="https://linkedin.com/in/yourprofile"
+                                class="w-full border rounded px-3 py-2"
+                            />
+                        </div>
                         
                         <div class="mb-6">
-                            <label class="block text-gray-700 mb-2">Upload Documents</label>
+                            <label class="block text-gray-700 mb-2">Create dataset</label>
                             <div id="drop-area" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
                                 <div id="file-preview" class="mb-4 grid grid-cols-2 gap-2"></div>
                                 <p class="text-gray-500 mb-2">Drag and drop files here or</p>
@@ -1413,6 +1406,27 @@
                                     Supported formats: PDF, TXT (max 10 files, 10MB each)
                                 </p>
                             </div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label class="block text-gray-700 mb-2">Dataset Description (Optional)</label>
+                            <textarea
+                                id="dataset-description"
+                                placeholder="Enter a brief description of the dataset..."
+                                class="w-full border rounded px-3 py-2 h-24 resize-none"
+                            ></textarea>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label class="block text-gray-700 mb-2">Custom Instructions (Optional)</label>
+                            <textarea
+                                id="dataset-custom-instructions"
+                                placeholder="Enter custom instructions for the AI when using this dataset (e.g., 'Focus on legal precedents from 2020 onwards', 'Respond in a formal tone'). These will be added to the system prompt."
+                                class="w-full border rounded px-3 py-2 h-24 resize-none"
+                            ></textarea>
+                            <p class="mt-1 text-xs text-gray-500">
+                                <i>Note:</i> These instructions will be prepended to the AI's system prompt for this dataset.
+                            </p>
                         </div>
                         
                         <div class="flex justify-end space-x-4">
@@ -1432,19 +1446,19 @@
                             </button>
                         </div>
                     </form>
-                </div>
-            `;
-            
+            `; // Removed the closing </div> for scrollableContent here as it's an element
+
+            modalContent.appendChild(scrollableContent); // Add scrollable content to modal
             modalOverlay.appendChild(modalContent);
             document.body.appendChild(modalOverlay);
             
-            // Set up event listeners
-            const dropArea = modalContent.querySelector('#drop-area');
-            const fileInput = modalContent.querySelector('#file-input');
-            const browseButton = modalContent.querySelector('#browse-button');
-            const cancelButton = modalContent.querySelector('#cancel-upload');
-            const filePreview = modalContent.querySelector('#file-preview');
-            const uploadForm = modalContent.querySelector('#document-upload-form');
+            // Set up event listeners (make sure to query within scrollableContent or modalContent as appropriate)
+            const dropArea = scrollableContent.querySelector('#drop-area');
+            const fileInput = scrollableContent.querySelector('#file-input');
+            const browseButton = scrollableContent.querySelector('#browse-button');
+            const cancelButton = scrollableContent.querySelector('#cancel-upload');
+            const filePreview = scrollableContent.querySelector('#file-preview');
+            const uploadForm = scrollableContent.querySelector('#document-upload-form');
             
             // Track selected files
             let selectedFiles = [];
@@ -1555,7 +1569,18 @@
                 
                 const datasetName = document.getElementById('dataset-name').value;
                 if (!datasetName) return;
+
+                const datasetAuthor = document.getElementById('dataset-author').value.trim();
+                const datasetTopic = document.getElementById('dataset-topic').value.trim();
+                const datasetLinkedin = document.getElementById('dataset-linkedin').value.trim();
+                const datasetDescription = document.getElementById('dataset-description').value.trim();
+                const datasetCustomInstructions = document.getElementById('dataset-custom-instructions').value.trim(); // New field
                 
+                if (!datasetAuthor || !datasetTopic) {
+                    alert('Author and Topic are required fields.');
+                    return;
+                }
+
                 if (selectedFiles.length === 0) {
                     alert('Please select at least one document to process.');
                     return;
@@ -1564,6 +1589,17 @@
                 // Create FormData object
                 const formData = new FormData();
                 formData.append('dataset_name', datasetName);
+                formData.append('dataset_author', datasetAuthor);
+                formData.append('dataset_topic', datasetTopic);
+                if (datasetLinkedin) {
+                    formData.append('dataset_linkedin', datasetLinkedin);
+                }
+                if (datasetDescription) {
+                    formData.append('dataset_description', datasetDescription);
+                }
+                if (datasetCustomInstructions) { // New field
+                    formData.append('dataset_custom_instructions', datasetCustomInstructions);
+                }
                 
                 // Add files to FormData
                 selectedFiles.forEach(file => {
@@ -1632,7 +1668,7 @@
                     errorMsg.textContent = error.message || 'Error processing documents';
                     
                     // Insert before buttons
-                    const buttonsDiv = modalContent.querySelector('.flex.justify-end');
+                    const buttonsDiv = scrollableContent.querySelector('.flex.justify-end');
                     buttonsDiv.parentNode.insertBefore(errorMsg, buttonsDiv);
                     
                     // Re-enable button
@@ -1684,13 +1720,170 @@
             window.addEventListener('scroll', removeContextMenu, { once: true });
             window.addEventListener('resize', removeContextMenu, { once: true });
         }
-        
+
+        // Add folder context menu handler
+        function handleFolderContextMenu(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Get the folder ID from the clicked element
+            const folderId = this.dataset.folderId;
+            console.log('Folder context menu opened for folder:', folderId);
+            
+            if (!folderId || folderId === 'default') {
+                console.log('Cannot modify default folder');
+                return;
+            }
+            
+            // Remove any existing context menu
+            removeContextMenu();
+            
+            // Create context menu
+            const contextMenu = document.createElement('div');
+            contextMenu.id = 'folder-context-menu';
+            contextMenu.className = 'fixed bg-gray-800 rounded shadow-lg p-2 z-[9999]';
+            contextMenu.style.left = `${e.clientX}px`;
+            contextMenu.style.top = `${e.clientY}px`;
+            
+            // Add rename option
+            const renameOption = document.createElement('div');
+            renameOption.className = 'p-2 hover:bg-gray-700 rounded cursor-pointer text-white flex items-center';
+            renameOption.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+                Rename Folder
+            `;
+            
+            renameOption.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Rename clicked for folder:', folderId);
+                removeContextMenu();
+                renameFolderPrompt(folderId);
+            };
+            
+            contextMenu.appendChild(renameOption);
+            
+            // Add delete option
+            const deleteOption = document.createElement('div');
+            deleteOption.className = 'p-2 hover:bg-red-700 rounded cursor-pointer text-white flex items-center';
+            deleteOption.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Delete Folder
+            `;
+            
+            deleteOption.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Delete clicked for folder:', folderId);
+                removeContextMenu();
+                if (confirm('Are you sure you want to delete this folder? Chats will be moved to the Default folder.')) {
+                    deleteFolder(folderId);
+                }
+            };
+            
+            contextMenu.appendChild(deleteOption);
+            document.body.appendChild(contextMenu);
+            
+            // Close menu on outside click
+            const closeMenu = (e) => {
+                if (!contextMenu.contains(e.target)) {
+                    removeContextMenu();
+                    document.removeEventListener('click', closeMenu);
+                }
+            };
+            
+            // Use setTimeout to avoid immediate trigger
+            setTimeout(() => {
+                document.addEventListener('click', closeMenu);
+            }, 0);
+        }
+
+        // Function to rename a folder
+        async function renameFolderPrompt(folderId) {
+            console.log('renameFolderPrompt called for folder:', folderId);
+            
+            // Find the folder in our data
+            const folder = folders.find(f => f.id === folderId);
+            if (!folder) {
+                console.error('Folder not found:', folderId);
+                return;
+            }
+            
+            // Get the current name
+            const currentName = folder.name;
+            console.log('Current folder name:', currentName);
+            
+            // Show input prompt for new name
+            const newName = prompt('Enter a new name for this folder:', currentName);
+            console.log('New folder name entered:', newName);
+            
+            // Update the folder name if a new name was provided
+            if (newName && newName.trim() !== '' && newName !== currentName) {
+                try {
+                    console.log('Sending rename request to server...');
+                    const response = await fetch(`/api/folders/${folderId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            name: newName.trim()
+                        }),
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to update folder name');
+                    }
+                    
+                    console.log('Folder renamed successfully');
+                    showToast('Folder renamed successfully');
+                    
+                    // Reload folders to reflect the changes
+                    await loadFolders();
+                    
+                } catch (error) {
+                    console.error('Error renaming folder:', error);
+                    alert('Failed to rename folder. Please try again.');
+                }
+            }
+        }
+
+        // Function to delete a folder
+        async function deleteFolder(folderId) {
+            console.log('deleteFolder called for folder:', folderId);
+            
+            try {
+                console.log('Sending delete request to server...');
+                const response = await fetch(`/api/folders/${folderId}`, {
+                    method: 'DELETE',
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to delete folder');
+                }
+                
+                console.log('Folder deleted successfully');
+                showToast('Folder deleted successfully');
+                
+                await loadFolders();
+                await loadChats();
+                
+            } catch (error) {
+                console.error('Error deleting folder:', error);
+                alert('Failed to delete folder. Please try again.');
+            }
+        }
+
         // Remove any open context menu
         function removeContextMenu() {
-            const existingMenu = document.getElementById('chat-context-menu') || document.getElementById('dataset-context-menu');
+            const existingMenu = document.getElementById('chat-context-menu') || document.getElementById('dataset-context-menu') || document.getElementById('folder-context-menu');
             if (existingMenu) {
                 existingMenu.remove();
-                document.removeEventListener('click', removeContextMenu);
+                document.removeEventListener('pointerdown', removeContextMenu);
             }
         }
         
@@ -1770,7 +1963,7 @@
                 }
                 
                 // Create mailto link with pre-filled content
-                const subject = `MimIA Feedback: ${feedbackType}`;
+                const subject = `QueryLex Feedback: ${feedbackType}`;
                 const body = `Feedback Type: ${feedbackType}\n\n${feedbackText}`;
                 
                 const mailtoLink = `mailto:mimia@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -1874,38 +2067,47 @@
                     method: 'DELETE'
                 });
                 
-                const result = await response.json();
-                
-                if (response.ok) {
+                let resultText = await response.text(); // Get raw text first
+                let result;
+                try {
+                    result = JSON.parse(resultText);
+                } catch (e) {
+                    // If parsing fails, create an error object with the raw text
+                    result = { error: `Failed to parse server response: ${resultText.substring(0,200)}`, success: false };
+                }
+
+                if (response.ok && result.success) {
                     // Show success toast
                     const toastMsg = document.createElement('div');
                     toastMsg.className = 'toast-notification';
-                    toastMsg.textContent = `Dataset "${datasetName}" deleted successfully`;
+                    toastMsg.textContent = result.message || `Dataset "${datasetName}" deleted.`; // Use message from server if available
                     document.body.appendChild(toastMsg);
                     
-                    // Remove toast after 3 seconds
                     setTimeout(() => {
-                        document.body.removeChild(toastMsg);
+                        if (toastMsg.parentNode) {
+                            document.body.removeChild(toastMsg);
+                        }
                     }, 3000);
                     
-                    // If the current dataset was deleted, switch to Default
                     if (currentDataset === datasetName) {
                         currentDataset = DEFAULT_DATASETS[0].name;
                         document.getElementById('current-dataset-indicator').textContent = currentDataset;
-                        
-                        // Add system message about dataset change
+                        document.getElementById('dataset-count-badge').classList.add('hidden');
                         addMessage('assistant', `Switched to default dataset: ${currentDataset}`, null, false, true);
                     }
-                    
-                    // Refresh the datasets view (if modal is open)
-                    viewDatasets();
                 } else {
-                    // Show error
-                    alert(`Error deleting dataset: ${result.error || 'Unknown error'}`);
+                    // Show error alert from server or a generic one
+                    alert(`Operation status: ${result.error || result.message || 'Could not complete operation. Check console.'}`);
                 }
-            } catch (error) {
-                console.error('Error deleting dataset:', error);
-                alert('Failed to delete dataset. Please try again.');
+            } catch (error) { // Catch for network errors or other unexpected issues
+                console.error('Error in deleteDataset function:', error);
+                alert('Failed to delete dataset due to a client-side or network error. Please try again.');
+            } finally {
+                // ALWAYS refresh the dataset view if the modal is open to ensure UI consistency
+                const existingModal = document.querySelector('.fixed.inset-0.bg-black.bg-opacity-50');
+                if (existingModal) {
+                    viewDatasets(); 
+                }
             }
         }
         
@@ -2097,6 +2299,173 @@
             // Reset dragged chat ID
             draggedChatId = null;
         }
+
+        function showEditDatasetModal(dataset) {
+            // Create a modal dialog for editing dataset metadata
+            const modalOverlay = document.createElement('div');
+            modalOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 edit-modal-overlay'; // Added class for potential targeted removal
+            
+            const modalContent = document.createElement('div');
+            modalContent.className = 'bg-white rounded-lg shadow-lg max-w-2xl w-full';
+            
+            const scrollableContent = document.createElement('div');
+            scrollableContent.className = 'p-6';
+            scrollableContent.style.maxHeight = '75vh'; 
+            scrollableContent.style.overflowY = 'auto';
+
+            // Prefill values, handling undefined gracefully
+            const description = dataset.description || '';
+            const author = dataset.author || '';
+            const topic = dataset.topic || '';
+            const linkedinUrl = dataset.linkedin_url || '';
+            // Custom instructions might not be directly in dataset object from /api/datasets initially
+            // We might need to fetch it or ensure /api/datasets returns it.
+            // For now, assume it might be missing or needs separate fetch if this becomes an issue.
+            const customInstructions = dataset.custom_instructions || ''; 
+
+            scrollableContent.innerHTML = `
+                <h2 class="text-2xl font-bold mb-6">Edit Dataset: <span class="font-normal text-blue-700">${dataset.name}</span></h2>
+                
+                <form id="dataset-edit-form">
+                    <div class="mb-4">
+                        <label class="block text-gray-700 mb-2">Dataset Name (Read-only)</label>
+                        <input type="text" value="${dataset.name}" class="w-full border rounded px-3 py-2 bg-gray-100" readonly />
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-gray-700 mb-2">Author</label>
+                        <input type="text" id="edit-dataset-author" value="${author}" class="w-full border rounded px-3 py-2" required />
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-gray-700 mb-2">Topic</label>
+                        <input type="text" id="edit-dataset-topic" value="${topic}" class="w-full border rounded px-3 py-2" required />
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-gray-700 mb-2">LinkedIn Profile URL (Optional)</label>
+                        <input type="url" id="edit-dataset-linkedin" value="${linkedinUrl}" placeholder="https://linkedin.com/in/yourprofile" class="w-full border rounded px-3 py-2" />
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="block text-gray-700 mb-2">Dataset Description</label>
+                        <textarea id="edit-dataset-description" class="w-full border rounded px-3 py-2 h-24 resize-none">${description}</textarea>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-gray-700 mb-2">Custom Instructions (Optional)</label>
+                        <textarea id="edit-dataset-custom-instructions" placeholder="Enter custom instructions for the AI..." class="w-full border rounded px-3 py-2 h-24 resize-none">${customInstructions}</textarea>
+                        <p class="mt-1 text-xs text-gray-500">
+                            <i>Note:</i> These instructions will be prepended to the AI's system prompt for this dataset.
+                        </p>
+                    </div>
+                    
+                    <div class="flex justify-end space-x-4 mt-6">
+                        <button type="button" id="cancel-edit" class="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100">Cancel</button>
+                        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save Changes</button>
+                    </div>
+                </form>
+            `;
+            
+            modalContent.appendChild(scrollableContent);
+            modalOverlay.appendChild(modalContent);
+            document.body.appendChild(modalOverlay);
+            
+            // Event listeners
+            modalContent.querySelector('#cancel-edit').addEventListener('click', () => {
+                document.body.removeChild(modalOverlay);
+            });
+            
+            modalContent.querySelector('#dataset-edit-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const updatedData = {
+                    author: document.getElementById('edit-dataset-author').value.trim(),
+                    topic: document.getElementById('edit-dataset-topic').value.trim(),
+                    linkedin_url: document.getElementById('edit-dataset-linkedin').value.trim(),
+                    description: document.getElementById('edit-dataset-description').value.trim(),
+                    custom_instructions: document.getElementById('edit-dataset-custom-instructions').value.trim(),
+                };
+
+                if (!updatedData.author || !updatedData.topic) {
+                    alert('Author and Topic are required fields.');
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(`/api/datasets/${encodeURIComponent(dataset.name)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(updatedData)
+                    });
+                    
+                    if (!response.ok) {
+                        const errorResult = await response.json().catch(() => ({ message: 'Failed to update dataset. Server error.' }));
+                        throw new Error(errorResult.message || `Server responded with ${response.status}`);
+                    }
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        showToast('Dataset updated successfully!');
+                        document.body.removeChild(modalOverlay);
+                        viewDatasets(); // Refresh the list of datasets to show changes
+                    } else {
+                        alert('Failed to update dataset: ' + (result.message || 'Unknown error'));
+                    }
+                } catch (error) {
+                    console.error('Error updating dataset:', error);
+                    alert('Error updating dataset: ' + error.message);
+                }
+            });
+        }
+
+        function showToast(message) {
+            const toastMsg = document.createElement('div');
+            toastMsg.className = 'toast-notification';
+            toastMsg.textContent = message;
+            document.body.appendChild(toastMsg);
+            setTimeout(() => {
+                if (toastMsg.parentNode) {
+                    document.body.removeChild(toastMsg);
+                }
+            }, 3000);
+        }
+
+        // Function to create folder toggle button
+        function createFolderToggleButton(folder) {
+            const button = document.createElement('button');
+            button.className = 'text-gray-400 hover:text-white p-1';
+            button.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+            `;
+            button.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const folderContainer = button.closest('.folder-container');
+                const chatsContainer = folderContainer.querySelector('.folder-chats');
+                const isExpanded = chatsContainer.style.display !== 'none';
+                
+                if (isExpanded) {
+                    chatsContainer.style.display = 'none';
+                    button.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                    `;
+                } else {
+                    chatsContainer.style.display = 'block';
+                    button.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    `;
+                }
+            });
+            return button;
+        }
+
     </script>
 </body>
 </html>

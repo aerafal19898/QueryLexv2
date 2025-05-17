@@ -1,14 +1,27 @@
-version: '3'
+version: '3.8'
 
 services:
-  web:
+  app:
     build: .
     ports:
-      - "5000:5000"
+      - "8080:8080"
     volumes:
       - ./data:/app/data
+      - .:/app
+    env_file:
+      - .env
     environment:
-      - DEBUG=False
-      # Add any other environment variables needed
-      # - OPENAI_API_KEY=your_api_key
-    restart: always
+      - DEBUG=True
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G

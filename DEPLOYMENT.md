@@ -5,106 +5,123 @@ This document provides instructions for deploying the Legal Sanctions RAG applic
 ## Prerequisites
 
 - Python 3.11+
-- pip
 - Docker and Docker Compose (for containerized deployment)
 - Access to environment variables (API keys, etc.)
 
-## Local Deployment
+## Quick Start with Docker
 
-### Using Python directly
-
-1. Create a virtual environment:
+1. Create a `.env` file based on `.env.example`:
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   cp .env.example .env
+   # Edit .env with your configuration
    ```
 
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. Create a `.env` file based on `.env.example` and fill in the required values.
-
-4. Run the application:
-   ```bash
-   python run.py
-   ```
-
-### Using Docker Compose
-
-1. Create a `.env` file based on `.env.example` and fill in the required values.
-
-2. Build and start the container:
+2. Build and run with Docker Compose:
    ```bash
    docker-compose up -d
    ```
 
-3. The application will be available at http://localhost:5000
+3. The application will be available at http://localhost:8080
 
-## Production Deployment Options
+## Production Deployment
 
-### 1. Cloud VM Deployment (AWS EC2, Google Compute Engine, etc.)
+### 1. Docker Deployment
 
-1. Set up a VM with Python 3.11+
-2. Clone the repository
-3. Follow the local deployment steps above
-4. Set up a reverse proxy (Nginx) and SSL (Let's Encrypt)
-5. Use systemd or supervisor to manage the application process
-
-### 2. Platform as a Service (PaaS)
-
-#### Heroku
-
-1. Install the Heroku CLI
-2. Create a `Procfile` with:
-   ```
-   web: python run.py
-   ```
-3. Set environment variables in Heroku dashboard
-4. Deploy with:
+1. Build the optimized Docker image:
    ```bash
-   git push heroku main
+   docker build -t legal-sanctions-rag .
    ```
 
-#### Render
+2. Run the container:
+   ```bash
+   docker run -d \
+     --name legal-sanctions-rag \
+     -p 8080:8080 \
+     --env-file .env \
+     -v $(pwd)/data:/app/data \
+     legal-sanctions-rag
+   ```
 
-1. Connect your GitHub repository
-2. Set build command: `pip install -r requirements.txt`
-3. Set start command: `python run.py`
-4. Configure environment variables
-
-### 3. Containerized Deployment
-
-#### AWS Elastic Container Service (ECS)
-
-1. Create an ECR repository
-2. Build and push the Docker image
-3. Create an ECS cluster, task definition, and service
-4. Configure environment variables in the task definition
+### 2. Cloud Deployment
 
 #### Google Cloud Run
 
-1. Build and push the Docker image to Google Container Registry
-2. Deploy to Cloud Run with environment variables
+1. Build and push the image:
+   ```bash
+   gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/legal-sanctions-rag
+   ```
 
-## Database Considerations
+2. Deploy to Cloud Run:
+   ```bash
+   gcloud run deploy legal-sanctions-rag \
+     --image gcr.io/YOUR_PROJECT_ID/legal-sanctions-rag \
+     --platform managed \
+     --region us-central1 \
+     --allow-unauthenticated \
+     --set-env-vars="$(cat .env | tr '\n' ',')"
+   ```
 
-This application uses local file storage for ChromaDB. For production, consider:
+#### AWS Elastic Container Service (ECS)
 
-1. Using persistent volumes for Docker deployments
-2. Setting up a managed database for production use
-3. Implementing regular backups
+1. Create an ECR repository:
+   ```bash
+   aws ecr create-repository --repository-name legal-sanctions-rag
+   ```
 
-## Environment Variable Security
+2. Build and push the image:
+   ```bash
+   aws ecr get-login-password | docker login --username AWS --password-stdin YOUR_ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com
+   docker build -t legal-sanctions-rag .
+   docker tag legal-sanctions-rag:latest YOUR_ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/legal-sanctions-rag:latest
+   docker push YOUR_ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/legal-sanctions-rag:latest
+   ```
 
-For production:
-1. Never commit `.env` files to version control
-2. Use secret management services (AWS Secrets Manager, GCP Secret Manager)
-3. Rotate secrets regularly
+3. Create an ECS task definition and service using the AWS Console or CLI.
 
-## Monitoring and Logging
+## Performance Optimization
 
-1. Configure application logging to an external service (CloudWatch, Stackdriver)
-2. Set up monitoring for the application health and performance
-3. Implement alerting for critical errors
+1. **Memory Management**:
+   - Set appropriate worker count based on available CPU cores
+   - Monitor memory usage and adjust worker count accordingly
+
+2. **Database Optimization**:
+   - Use persistent storage for ChromaDB
+   - Consider using a managed vector database service for production
+
+3. **Caching**:
+   - Enable Redis caching for frequently accessed data
+   - Use browser caching for static assets
+
+4. **Load Balancing**:
+   - Use a load balancer for high availability
+   - Configure health checks and auto-scaling
+
+## Monitoring and Maintenance
+
+1. **Logging**:
+   - Monitor application logs
+   - Set up log aggregation (e.g., CloudWatch, Stackdriver)
+
+2. **Health Checks**:
+   - Implement health check endpoints
+   - Set up monitoring alerts
+
+3. **Backup**:
+   - Regular backups of ChromaDB data
+   - Document encryption key backup
+
+## Security Considerations
+
+1. **API Keys**:
+   - Store API keys in a secure vault
+   - Rotate keys regularly
+
+2. **Network Security**:
+   - Use HTTPS
+   - Configure firewall rules
+   - Implement rate limiting
+
+3. **Data Security**:
+   - Encrypt sensitive data
+   - Implement proper access controls
+   - Regular security audits

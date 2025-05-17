@@ -52,8 +52,8 @@ class LegalDocumentProcessor:
         # Extract text from PDF using unstructured
         elements = partition_pdf(
             file_path,
-            extract_images_in_pdf=False,
-            infer_table_structure=True,
+            strategy="hi_res",
+            infer_table_structure=True
         )
         
         # Process text elements

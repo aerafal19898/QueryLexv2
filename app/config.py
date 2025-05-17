@@ -17,7 +17,7 @@ DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
 
 # OpenRouter API settings
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
 OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
 
 # Model configurations
