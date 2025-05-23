@@ -5,6 +5,9 @@ Configuration settings for the Legal Sanctions RAG application.
 import os
 import secrets
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Base directory
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -17,7 +20,7 @@ DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
 
 # OpenRouter API settings
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
 
 # Model configurations
