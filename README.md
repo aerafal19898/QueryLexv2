@@ -1,192 +1,99 @@
-# Secure Document RAG Platform
+# QueryLex v2 – Secure Legal‑RAG Marketplace ⚖️🤖
 
-A high-security web application for querying confidential legal documents using DeepSeek R1 with RAG (Retrieval Augmented Generation).
+A secure, EU-hosted marketplace where legal professionals can buy, sell, and chat with Retrieval‑Augmented‑Generation (RAG) models. Built with enterprise-grade security and compliance in mind.
 
-## Enterprise Security Features
+## ✨ Core Features
 
-- **End-to-end document encryption** with secure in-memory processing
-- **Role-based access control (RBAC)** with customizable permission matrix
-- **Multi-factor authentication** with app, email, and SMS options
-- **Comprehensive audit logging** for enhanced security and compliance
-- **Credit-based access system** for usage control and monetization
-- **Secure document processing** with sanitization and validation
-- **Private API access** with JWT authentication
-- **Encrypted document search** with user-based filtering
-- **Complete audit trail** for document operations and user actions
+### Marketplace & Creator Tools
+- **Marketplace / Leaderboard** – Sort by usage and ratings (OpenRouter style)
+- **Creator Wizard** – Simple upload ▶ tag ▶ price ▶ publish workflow
+- **Immutable Versioning** – Document bundles are versioned with secure hashes
+- **Revenue Sharing** – Creators earn 70% of revenue (30% platform fee)
 
-## Advanced RAG Features
+### User Experience
+- **Free Tier** – 3 free requests per month (rate-limited to 1 req/min)
+- **Credit System** – Top-up credits (1 € = 1 000 tokens)
+- **Real-time Streaming** – Chat responses stream tokens in real-time
+- **Source Citations** – All responses include source chunk hashes
+- **Organized Workspace** – Drag-and-drop folder organization with React-Arborist
 
-- Chat interface with streaming response
-- Multiple RAG model selection with hybrid vector search
-- Secure document processing to create custom RAG models
-- Specialized in legal document processing and retrieval
-- Powered by DeepSeek R1 Distill Llama 70B for accurate responses
-- Multi-approach document processing with fallback mechanisms
+### Security & Compliance
+- **EU Data Locality** – All data stored in EU ChromaDB cluster
+- **Document Encryption** – Fernet-encrypted documents and embeddings
+- **PII Protection** – ≥ 95% recall/precision PII scrubber (Piiranha + regex)
+- **Comprehensive Audit Logging** – Track all system activities
+- **GDPR Compliance** – Built-in data protection features
 
-## Requirements
+## 🏗 Project Structure
 
-- Python 3.9+
-- Flask with JWT authentication
-- ChromaDB for vector storage
-- HuggingFace Transformers
-- Cryptography libraries
-- Document processing tools
+```
+backend/     # Flask API, Stripe webhooks, cron jobs
+frontend/    # React + Vite + Tailwind UI
+services/    # extraction, PII scrubber, embeddings
+infra/       # Docker-compose, Terraform, GitHub Actions
+docs/        # architecture diagrams, this README
+```
 
-## Installation
+## 🚀 Getting Started
 
-1. Clone this repository
-2. Install the required dependencies:
+1. Clone the repository:
+```bash
+git clone https://github.com/aerafal19898/QueryLexv2.git
+cd QueryLexv2
+```
 
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Set up environment variables in a `.env` file:
-
+3. Set up environment variables in `.env`:
 ```bash
-# API keys
-OPENROUTER_API_KEY=your_openrouter_api_key
-DEEPSEEK_API_KEY=your_deepseek_api_key
+# API Keys
+OPENROUTER_API_KEY=your_key
+STRIPE_SECRET_KEY=your_key
+STRIPE_WEBHOOK_SECRET=your_key
 
-# Security keys (generate with secrets.token_hex())
-SECRET_KEY=generate_a_secure_random_key
-JWT_SECRET_KEY=generate_another_secure_random_key
-DOCUMENT_ENCRYPTION_KEY=generate_a_32_byte_key_for_encryption
+# Security
+SECRET_KEY=generate_secure_key
+JWT_SECRET_KEY=generate_secure_key
+DOCUMENT_ENCRYPTION_KEY=generate_32_byte_key
 
-# Email settings for feedback and notifications
-MAIL_SERVER=smtp.example.com
-MAIL_PORT=587
-MAIL_USERNAME=your_username
-MAIL_PASSWORD=your_password
-MAIL_DEFAULT_SENDER=noreply@example.com
-MAIL_FEEDBACK_RECIPIENT=feedback@example.com
+# Database
+CHROMA_HOST=localhost
+CHROMA_PORT=8000
 
-# Optional AWS S3 settings for scalable storage
-AWS_ACCESS_KEY=your_aws_access_key
-AWS_SECRET_KEY=your_aws_secret_key
-AWS_REGION=us-east-1
-AWS_S3_BUCKET=your-bucket-name
-USE_S3_STORAGE=false  # Set to true to use S3
-
-# Optional feature flags
-DEBUG=false  # Set to true for development
+# Feature Flags
+DEBUG=false
 ENCRYPTION_ENABLED=true
 SECURE_PROCESSING=true
-ENABLE_AUDIT_LOGGING=true
-ALLOW_REGISTRATION=true
-REQUIRE_EMAIL_VERIFICATION=false
-ADMIN_APPROVAL_REQUIRED=false
 ```
 
-## Production Deployment
-
-For production deployment, the platform supports various options:
-
-1. **Docker deployment**:
-   - Build the Docker image: `docker build -t secure-rag .`
-   - Run with environment variables: `docker run -p 5000:5000 --env-file .env secure-rag`
-
-2. **Cloud deployment** (AWS example):
-   - Update S3 settings in `.env`
-   - Set up an EC2 instance or ECS service
-   - Configure auto-scaling based on load
-   - Use a load balancer for high availability
-
-3. **On-premises deployment**:
-   - Set up a production WSGI server:
-   ```bash
-   pip install waitress gunicorn
-   waitress-serve --port=5000 --call 'run:app'
-   ```
-   - Use nginx as a reverse proxy for SSL termination
-
-## Development Usage
-
-1. Start the application in development mode:
-
+4. Start the development server:
 ```bash
 python run.py
 ```
 
-2. Open your browser and navigate to `http://localhost:5000`
+## 💳 Billing & Payouts
 
-3. Register an admin account and login
+- **Stripe Connect** integration for secure payments
+- **Automatic Payouts** to creators
+- **Full Refund** capability for administrators
+- **Usage-based Billing** with credit system
 
-4. Use the interface to:
-   - Chat with the AI about legal documents
-   - Upload and process confidential documents securely
-   - Manage users, permissions, and credits
-   - Monitor usage and audit logs
+## 🔒 Security Features
 
-## API Access
+- **End-to-end Encryption** for all documents
+- **Role-based Access Control** (RBAC)
+- **Multi-factor Authentication**
+- **Secure Document Processing**
+- **Private API Access** with JWT
+- **Encrypted Document Search**
 
-The platform provides a secure API for integration with other systems:
+## 🤝 Contributing
 
-```bash
-# Get an access token
-curl -X POST http://localhost:5000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username_or_email": "user@example.com", "password": "your_password"}'
+We welcome contributions! Please read our contributing guidelines before submitting pull requests.
 
-# Use the token for authenticated requests
-curl -X GET http://localhost:5000/api/secure-documents/123 \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
-```
+## 📄 License
 
-Full API documentation is available at `/api/docs` when running the application.
-
-## Secure Document Processing
-
-The platform implements multiple layers of security for document processing:
-
-1. **Document encryption**:
-   - All uploaded documents are immediately encrypted using Fernet symmetric encryption
-   - Document metadata is stored separately from encrypted content
-   - Encryption keys are never stored with the documents
-
-2. **In-memory processing**:
-   - Documents are processed entirely in memory, never written to disk unencrypted
-   - Temporary decryption is done in secure memory buffers
-   - Memory is zeroed after processing
-
-3. **User-based access control**:
-   - Documents are linked to specific user accounts
-   - Role-based permissions determine who can access each document
-   - All document access is logged for audit purposes
-
-4. **Secure document viewing**:
-   - Temporary access tokens with short expiration times
-   - Streaming document delivery to prevent full downloads
-   - Watermarking and access tracking
-
-## Comprehensive Security Measures
-
-The platform implements these security best practices:
-
-- **API Security**:
-  - JWT-based authentication with short-lived tokens
-  - Rate limiting to prevent brute force attacks
-  - CORS protections against cross-site request forgery
-
-- **Infrastructure Security**:
-  - Optional S3 integration for enterprise storage
-  - Load balancer support for high availability
-  - Containerized deployment for isolation
-
-- **Compliance Features**:
-  - GDPR-compliant user data handling
-  - Comprehensive logging for regulatory requirements
-  - Credit-based access for controlled usage
-
-## Technologies Used
-
-- **Backend**: Flask with JWT authentication
-- **Vector Storage**: ChromaDB for high-performance retrieval
-- **Embeddings**: BGE-Large-v1.5 optimized for legal documents
-- **Security**: Fernet encryption, bcrypt password hashing
-- **Document Processing**: Multi-method extraction with fallbacks
-- **LLM Integration**: DeepSeek R1 Distill Llama 70B via OpenRouter
-
-## License
-
-MIT
+MIT License - See LICENSE file for details
