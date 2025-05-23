@@ -42,7 +42,6 @@ dotenv.load_dotenv()
 try:
     nltk.download('punkt', quiet=True)
     nltk.download('averaged_perceptron_tagger', quiet=True)
-    nltk.download('averaged_perceptron_tagger_eng', quiet=True)
     # For English only
     nltk.download('maxent_ne_chunker', quiet=True)
     nltk.download('words', quiet=True)
@@ -193,7 +192,13 @@ def robust_extract_text_from_pdf(pdf_path):
     # METHOD 1: Using unstructured library (works well for many PDFs)
     try:
         print(f"Trying unstructured partition for {pdf_path}")
-        elements = partition_pdf(pdf_path, strategy="hi_res")
+        # Try without extract_images_in_pdf parameter first
+        try:
+            elements = partition_pdf(pdf_path, strategy="hi_res")
+        except TypeError:
+            # If that fails, try with older version parameters
+            elements = partition_pdf(pdf_path)
+            
         for element in elements:
             if hasattr(element, 'text') and element.text:
                 all_text.append(element.text)
@@ -713,6 +718,7 @@ def upload_documents():
                 if doc_file.endswith('.pdf'):
                     # Use robust PDF extraction method
                     extracted_texts = robust_extract_text_from_pdf(file_path)
+                    print(f"Extracted {len(extracted_texts)} text chunks from {doc_file}")
                     
                     # Process extracted texts
                     for j, text in enumerate(extracted_texts):
@@ -727,6 +733,7 @@ def upload_documents():
                         
                     # Split text into paragraphs or chunks
                     chunks = [t.strip() for t in text.split('\n\n') if t.strip()]
+                    print(f"Split text file into {len(chunks)} chunks")
                     
                     for j, chunk in enumerate(chunks):
                         if len(chunk) > 50:  # Skip very short segments
@@ -743,17 +750,21 @@ def upload_documents():
             except Exception as e:
                 print(f"Error processing {file_path}: {str(e)}")
         
+        print(f"Total documents to process: {len(documents)}")
+        
         # Add to Chroma
         for i in range(0, len(documents), 100):  # Batch processing
             batch_docs = documents[i:i+100]
             batch_meta = metadatas[i:i+100]
             batch_ids = ids[i:i+100]
             
+            print(f"Processing batch {i//100 + 1} of {(len(documents)-1)//100 + 1}")
             collection.add(
                 documents=batch_docs,
                 metadatas=batch_meta,
                 ids=batch_ids
             )
+            print(f"Successfully added batch {i//100 + 1} to ChromaDB")
         
         # Store dataset metadata
         dataset_metadata = load_dataset_metadata()
@@ -804,6 +815,16 @@ def list_folders_route():
     folders = chat_storage.list_folders()
     return jsonify(folders)
 
+@app.route('/api/folders', methods=['POST'])
+def create_folder_route():
+    """Create a new folder."""
+    data = request.json
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'error': 'Missing folder name'}), 400
+    folder_id = chat_storage.create_folder(name)
+    return jsonify({'success': True, 'id': folder_id, 'name': name})
+
 @app.route('/api/folders/<folder_id>', methods=['PUT'])
 def rename_folder_route(folder_id):
     """Rename a folder."""
@@ -827,37 +848,30 @@ def rename_folder_route(folder_id):
     # Save folders
     # chat_storage does not have a save_folders, so we update the file directly
     import os, json
-    folders_file = os.path.join(chat_storage.storage_dir, 'folders.json')
+    folders_file = os.path.join(chat_storage.storage_dir, "folders.json")
     with open(folders_file, 'w') as f:
-        json.dump({'folders': folders}, f, indent=2)
+        json.dump({"folders": folders}, f, indent=2)
 
-    return jsonify({'success': True, 'message': 'Folder renamed successfully.'})
-
-@app.route('/api/folders', methods=['POST'])
-def create_folder_route():
-    """Create a new folder."""
-    data = request.json
-    name = data.get('name', '').strip()
-    if not name:
-        return jsonify({'error': 'Missing folder name'}), 400
-    folder_id = chat_storage.create_folder(name)
-    return jsonify({'success': True, 'id': folder_id, 'name': name})
+    return jsonify({'success': True})
 
 @app.route('/api/folders/<folder_id>', methods=['DELETE'])
 def delete_folder_route(folder_id):
     """Delete a folder and move its chats to the default folder."""
-    try:
-        # Move all chats in this folder to the default folder
-        chats_in_folder = chat_storage.list_chats(folder_id)
-        for chat in chats_in_folder:
+    if folder_id == 'default':
+        return jsonify({'error': 'Cannot delete the default folder'}), 400
+
+    # First, move all chats in this folder to the default folder
+    chats = chat_storage.list_chats()
+    for chat in chats:
+        if chat.get('folder_id') == folder_id:
             chat_storage.move_chat_to_folder(chat['id'], 'default')
-        # Delete the folder
-        success = chat_storage.delete_folder(folder_id)
-        if not success:
-            return jsonify({'success': False, 'error': 'Folder not found'}), 404
-        return jsonify({'success': True, 'message': 'Folder deleted successfully'})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+
+    # Then delete the folder
+    success = chat_storage.delete_folder(folder_id)
+    if not success:
+        return jsonify({'error': 'Folder not found'}), 404
+
+    return jsonify({'success': True})
 
 # Chat API routes
 @app.route('/api/chats', methods=['GET'])
@@ -1963,6 +1977,144 @@ def submit_user_feedback():
         "success": True,
         "feedback_id": feedback_id
     })
+
+# --- DATASET DOCUMENT MANAGEMENT ENDPOINTS ---
+from flask import send_from_directory
+
+@app.route('/api/datasets/<dataset_name>/documents', methods=['GET'])
+def list_dataset_documents(dataset_name):
+    """List all documents in a dataset (by Chroma collection metadata)."""
+    try:
+        collection = chroma_client.get_collection(name=dataset_name)
+        results = collection.get(include=["metadatas"])  # Only metadatas, ids always returned
+        print(f"[DEBUG] Chroma collection metadatas for {dataset_name}:")
+        for meta, doc_id in zip(results["metadatas"], results["ids"]):
+            print(f"  id={doc_id} meta={meta}")
+        docs = {}
+        for meta, doc_id in zip(results["metadatas"], results["ids"]):
+            filename = meta.get("source") or meta.get("file") or meta.get("filename")
+            if not filename:
+                continue
+            if filename not in docs:
+                docs[filename] = {"filename": filename, "ids": [], "id": filename}
+            docs[filename]["ids"].append(doc_id)
+        doc_list = list(docs.values())
+        if not doc_list:
+            # Return all metadatas for debugging
+            return jsonify({"documents": [], "debug_metadatas": results["metadatas"]}), 200
+        return jsonify(doc_list)
+    except Exception as e:
+        print(f"Error listing documents for dataset {dataset_name}: {e}")
+        return jsonify([]), 200
+
+@app.route('/api/datasets/<dataset_name>/documents', methods=['POST'])
+def upload_documents_to_dataset(dataset_name):
+    """Upload documents to an existing dataset (append to Chroma collection)."""
+    try:
+        if 'files' not in request.files:
+            return jsonify({"status": "error", "message": "No files uploaded"}), 400
+        # Save uploaded files
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        upload_path = os.path.join(app.config['UPLOAD_FOLDER'], timestamp)
+        os.makedirs(upload_path, exist_ok=True)
+        uploaded_files = request.files.getlist('files')
+        saved_files = []
+        for file in uploaded_files:
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                file_path = os.path.join(upload_path, filename)
+                file.save(file_path)
+                saved_files.append(filename)
+        if not saved_files:
+            return jsonify({"status": "error", "message": "No valid files uploaded"}), 400
+        # Get collection
+        collection = chroma_client.get_or_create_collection(name=dataset_name)
+        # Process and add to Chroma
+        documents = []
+        metadatas = []
+        ids = []
+        for i, doc_file in enumerate(saved_files):
+            file_path = os.path.join(upload_path, doc_file)
+            try:
+                if doc_file.endswith('.pdf'):
+                    extracted_texts = robust_extract_text_from_pdf(file_path)
+                    for j, text in enumerate(extracted_texts):
+                        if text and len(text) > 50:
+                            documents.append(text)
+                            metadatas.append({"source": doc_file, "page": j})
+                            ids.append(f"{doc_file}_{i}_{j}")
+                elif doc_file.endswith('.txt'):
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        text = f.read()
+                    chunks = [t.strip() for t in text.split('\n\n') if t.strip()]
+                    for j, chunk in enumerate(chunks):
+                        if len(chunk) > 50:
+                            documents.append(chunk)
+                            metadatas.append({"source": doc_file, "part": j})
+                            ids.append(f"{doc_file}_{i}_{j}")
+                    if not chunks and len(text) > 50:
+                        documents.append(text)
+                        metadatas.append({"source": doc_file, "part": 0})
+                        ids.append(f"{doc_file}_{i}_0")
+            except Exception as e:
+                print(f"Error processing {file_path}: {str(e)}")
+        for i in range(0, len(documents), 100):
+            batch_docs = documents[i:i+100]
+            batch_meta = metadatas[i:i+100]
+            batch_ids = ids[i:i+100]
+            collection.add(documents=batch_docs, metadatas=batch_meta, ids=batch_ids)
+        return jsonify({"success": True, "message": f"Uploaded {len(saved_files)} documents to {dataset_name}"})
+    except Exception as e:
+        print(f"Error uploading documents to dataset {dataset_name}: {e}")
+        return jsonify({"status": "error", "message": f"Server error: {str(e)}"}), 500
+
+@app.route('/api/datasets/<dataset_name>/documents/<doc_id>', methods=['DELETE'])
+def delete_document_from_dataset(dataset_name, doc_id):
+    """Delete a document and all its chunks from a dataset."""
+    try:
+        collection = chroma_client.get_collection(name=dataset_name)
+        # Find all ids for this document (by filename)
+        results = collection.get(include=["metadatas"])  # Only metadatas, ids always returned
+        ids_to_delete = [id_ for meta, id_ in zip(results["metadatas"], results["ids"]) if meta.get("source") == doc_id or meta.get("file") == doc_id or meta.get("filename") == doc_id]
+        if not ids_to_delete:
+            return jsonify({"success": False, "message": "No chunks found for this document."}), 404
+        collection.delete(ids=ids_to_delete)
+        return jsonify({"success": True, "message": f"Deleted document {doc_id} and its chunks."})
+    except Exception as e:
+        print(f"Error deleting document {doc_id} from dataset {dataset_name}: {e}")
+        return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
+
+@app.route('/api/datasets/check-name')
+def check_dataset_name():
+    """Check if a dataset name is already taken."""
+    name = request.args.get('name', '').strip()
+    if not name:
+        return jsonify({"taken": False, "error": "No name provided"}), 400
+    collections = chroma_client.list_collections()
+    collection_names = [c.name for c in collections]
+    if name in collection_names:
+        return jsonify({"taken": True})
+    return jsonify({"taken": False})
+
+# Patch /api/upload-documents to check for existing name
+import functools
+orig_upload_documents = upload_documents
+@functools.wraps(orig_upload_documents)
+def upload_documents_patched():
+    dataset_name = request.form.get('dataset_name', 'New Dataset')
+    sanitized_name = ''.join(c if c.isalnum() or c in '-_' else '-' for c in dataset_name)
+    sanitized_name = sanitized_name.strip('-_')
+    collections = chroma_client.list_collections()
+    collection_names = [c.name for c in collections]
+    if sanitized_name in collection_names:
+        return jsonify({"status": "error", "message": "Dataset name already taken"}), 400
+    return orig_upload_documents()
+app.view_functions['upload_documents'] = upload_documents_patched
+
+# Add an alias for the update endpoint to support /update
+@app.route('/api/datasets/<dataset_name>/update', methods=['PUT'])
+def update_dataset_metadata_route_alias(dataset_name):
+    return update_dataset_metadata_route(dataset_name)
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

@@ -60,7 +60,7 @@ class SecureDocumentProcessor:
     def process_document_securely(
         self,
         file_path: str,
-        dataset_name: str,
+        ragmodel_name: str,
         user_id: Optional[str] = None,
         delete_original: bool = False
     ) -> Dict[str, Any]:
@@ -68,7 +68,7 @@ class SecureDocumentProcessor:
         
         Args:
             file_path: Path to the document file
-            dataset_name: Name of the dataset to add document to
+            ragmodel_name: Name of the dataset to add document to
             user_id: Optional user ID for access control
             delete_original: Whether to delete the original file after processing
             
@@ -96,8 +96,8 @@ class SecureDocumentProcessor:
                 chunks = self.doc_processor.process_document(processing_path)
                 
                 # Add to vector database
-                doc_count, chunk_count = self._add_to_dataset(
-                    dataset_name=dataset_name,
+                doc_count, chunk_count = self._add_to_ragmodel(
+                    ragmodel_name=ragmodel_name,
                     chunks=chunks,
                     metadata={
                         "source": os.path.basename(file_path),
@@ -120,7 +120,7 @@ class SecureDocumentProcessor:
             return {
                 "status": "success",
                 "encrypted_id": encrypted_id,
-                "dataset": dataset_name,
+                "ragmodel": ragmodel_name,
                 "chunk_count": chunk_count,
                 "file_name": os.path.basename(file_path)
             }
@@ -139,7 +139,7 @@ class SecureDocumentProcessor:
     def process_batch_securely(
         self,
         file_paths: List[str],
-        dataset_name: str,
+        ragmodel_name: str,
         user_id: Optional[str] = None,
         delete_originals: bool = False
     ) -> Dict[str, Any]:
@@ -147,7 +147,7 @@ class SecureDocumentProcessor:
         
         Args:
             file_paths: List of file paths to process
-            dataset_name: Name of the dataset to add documents to
+            ragmodel_name: Name of the dataset to add documents to
             user_id: Optional user ID for access control
             delete_originals: Whether to delete original files after processing
             
@@ -163,7 +163,7 @@ class SecureDocumentProcessor:
             try:
                 result = self.process_document_securely(
                     file_path=file_path,
-                    dataset_name=dataset_name,
+                    ragmodel_name=ragmodel_name,
                     user_id=user_id,
                     delete_original=delete_originals
                 )
@@ -186,16 +186,16 @@ class SecureDocumentProcessor:
         
         return results
     
-    def _add_to_dataset(
+    def _add_to_ragmodel(
         self,
-        dataset_name: str,
+        ragmodel_name: str,
         chunks: List[str],
         metadata: Dict[str, Any]
     ) -> tuple:
         """Add document chunks to a dataset.
         
         Args:
-            dataset_name: Name of the dataset
+            ragmodel_name: Name of the dataset
             chunks: List of text chunks
             metadata: Metadata to attach to chunks
             
@@ -233,7 +233,7 @@ class SecureDocumentProcessor:
             ids.append(chunk_id)
         
         # Get ChromaDB collection
-        collection = self.doc_processor.chroma_client.get_or_create_collection(name=dataset_name)
+        collection = self.doc_processor.chroma_client.get_or_create_collection(name=ragmodel_name)
         
         # Add chunks in batches
         batch_size = 100
@@ -253,7 +253,7 @@ class SecureDocumentProcessor:
     
     def secure_search(
         self,
-        dataset_name: str,
+        ragmodel_name: str,
         query: str,
         user_id: Optional[str] = None,
         n_results: int = 5,
@@ -262,7 +262,7 @@ class SecureDocumentProcessor:
         """Search a dataset with user-based access control.
         
         Args:
-            dataset_name: Name of the dataset to search
+            ragmodel_name: Name of the dataset to search
             query: Search query
             user_id: User ID for access control
             n_results: Number of results to return
@@ -282,7 +282,7 @@ class SecureDocumentProcessor:
         
         # Search with document processor
         results = self.doc_processor.query_dataset(
-            dataset_name=dataset_name,
+            dataset_name=ragmodel_name,
             query=query,
             n_results=n_results,
             use_hybrid_search=True,
@@ -395,7 +395,7 @@ class SecureDocumentProcessor:
     def memoryless_processing(
         self,
         file_obj: BinaryIO,
-        dataset_name: str,
+        ragmodel_name: str,
         original_filename: str,
         user_id: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -403,7 +403,7 @@ class SecureDocumentProcessor:
         
         Args:
             file_obj: File-like object containing document data
-            dataset_name: Name of the dataset to add document to
+            ragmodel_name: Name of the dataset to add document to
             original_filename: Original filename for metadata
             user_id: Optional user ID for access control
             
@@ -458,8 +458,8 @@ class SecureDocumentProcessor:
                 os.unlink(temp_path)
                 
                 # Add to vector database
-                doc_count, chunk_count = self._add_to_dataset(
-                    dataset_name=dataset_name,
+                doc_count, chunk_count = self._add_to_ragmodel(
+                    ragmodel_name=ragmodel_name,
                     chunks=chunks,
                     metadata={
                         "source": original_filename,
@@ -472,7 +472,7 @@ class SecureDocumentProcessor:
                 return {
                     "status": "success",
                     "encrypted_id": encrypted_id,
-                    "dataset": dataset_name,
+                    "ragmodel": ragmodel_name,
                     "chunk_count": chunk_count,
                     "file_name": original_filename
                 }

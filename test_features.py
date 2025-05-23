@@ -40,8 +40,8 @@ if collections:
     print(f"\nQuery: {test_query}")
     
     # Test with vector search only (baseline)
-    vector_results = processor.query_dataset(
-        dataset_name=collection_name,
+    vector_results = processor.query_ragmodel(
+        ragmodel_name=collection_name,
         query=test_query,
         n_results=3,
         use_hybrid_search=False,
@@ -55,8 +55,8 @@ if collections:
         print(f"Preview: {doc[:100]}...\n")
     
     # Test with hybrid search
-    hybrid_results = processor.query_dataset(
-        dataset_name=collection_name,
+    hybrid_results = processor.query_ragmodel(
+        ragmodel_name=collection_name,
         query=test_query,
         n_results=3,
         use_hybrid_search=True,
@@ -70,8 +70,8 @@ if collections:
         print(f"Preview: {doc[:100]}...\n")
     
     # Test with hybrid search and reranking
-    hybrid_reranked_results = processor.query_dataset(
-        dataset_name=collection_name,
+    hybrid_reranked_results = processor.query_ragmodel(
+        ragmodel_name=collection_name,
         query=test_query,
         n_results=3,
         use_hybrid_search=True,

@@ -20,7 +20,7 @@ chat_endpoint = f"{base_url}/api/chats"
 print("1. Creating a new chat...")
 create_response = requests.post(
     chat_endpoint,
-    json={"title": "Test Streaming Chat", "dataset": "EU-Sanctions"}
+    json={"title": "Test Streaming Chat", "ragmodel": "EU-Sanctions"}
 )
 
 if create_response.status_code != 200:
@@ -44,7 +44,7 @@ try:
     # Send the request in streaming mode
     response = requests.post(
         streaming_url,
-        json={"message": test_query, "dataset": "EU-Sanctions"},
+        json={"message": test_query, "ragmodel": "EU-Sanctions"},
         stream=True
     )
     

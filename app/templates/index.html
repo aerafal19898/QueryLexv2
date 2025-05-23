@@ -45,20 +45,31 @@
         
         /* Drag and drop styling */
         .drag-over {
-            background-color: #4a5568 !important;
-            border: 2px dashed #90cdf4 !important;
+            background-color: #e6f3ff !important;
+            border: 2px dashed #3b82f6 !important;
+        }
+        
+        #drop-area {
+            transition: all 0.3s ease;
+            border: 2px dashed #d1d5db;
+            background-color: #f9fafb;
+        }
+        
+        #drop-area:hover {
+            border-color: #3b82f6;
+            background-color: #f0f9ff;
         }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div class="flex h-screen overflow-hidden">
         <!-- Sidebar -->
-        <div id="sidebar" class="w-72 bg-gray-800 text-white flex flex-col">
+        <div id="sidebar" class="w-72 bg-gray-800 text-white flex flex-col h-screen">
             <!-- Logo and title -->
-            <div class="p-4 border-b border-gray-700 flex flex-col items-center">
-                <div class="w-40 h-40 rounded-lg overflow-hidden flex items-center justify-center bg-transparent">
+            <div class="p-2 border-b border-gray-700 flex flex-col items-center">
+                <a href="https://Querylex.com" target="_blank" class="w-32 h-32 rounded-lg overflow-hidden flex items-center justify-center bg-transparent">
                     <img id="app-logo" src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo" style="max-width: 100%; max-height: 100%; object-fit: contain;">
-                </div>
+                </a>
             </div>
             
             <!-- New Chat Button -->
@@ -72,22 +83,24 @@
             </div>
             
             <!-- Folders and Chats -->
-            <div class="p-4 border-b border-gray-700">
-                <div class="flex justify-between items-center mb-2">
-                    <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400">Folders & Chats</h2>
-                    <button id="new-folder-btn" class="text-gray-400 hover:text-white">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
-                        </svg>
-                    </button>
+            <div class="flex-1 flex flex-col min-h-0">
+                <div class="p-4 border-b border-gray-700 flex-shrink-0">
+                    <div class="flex justify-between items-center mb-2">
+                        <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400">Folders & Chats</h2>
+                        <button id="new-folder-btn" class="text-gray-400 hover:text-white">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
-                <div id="folders-container" class="space-y-2 overflow-y-auto max-h-96">
+                <div id="folders-container" class="flex-1 space-y-2 overflow-y-auto min-h-0 px-4 pb-4">
                     <!-- Folders with their chats will be nested here -->
                 </div>
             </div>
             
             <!-- Tools -->
-            <div class="p-4 mt-auto border-t border-gray-700">
+            <div class="p-4 border-t border-gray-700 bg-gray-800 sticky bottom-0 z-10">
                 <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-2">Tools</h2>
                 <div class="space-y-2">
                     <button onclick="viewDatasets()" class="w-full text-left px-4 py-2 rounded hover:bg-gray-700 flex items-center">
@@ -252,13 +265,13 @@
                 console.log('[SendMessage] Message input is empty.');
                 return;
             }
-
+            
             // Add user message to UI
             addMessage('user', message);
             userInput.value = ''; // Clear input
-
+            
             // Show thinking indicator
-            const thinkingId = showThinking();
+                const thinkingId = showThinking();
             console.log(`[SendMessage] User message: ${message}, Current dataset: ${currentDataset}, Current chat ID: ${currentChatId}`);
 
             try {
@@ -295,15 +308,15 @@
 
                 console.log(`[SendMessage] Sending message to /api/chats/${currentChatId}/messages`);
                 const response = await fetch(`/api/chats/${currentChatId}/messages`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        message: message,
-                        dataset: currentDataset
-                    }),
-                });
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            message: message,
+                            dataset: currentDataset
+                        }),
+                    });
                 console.log('[SendMessage] Add message response status:', response.status);
 
                 removeThinking(thinkingId); // Remove thinking indicator *after* the initial fetch attempt
@@ -333,11 +346,11 @@
 
                 const contentContainer = document.getElementById(`${messageId}-content`);
                 const reader = response.body.getReader(); // Use the response from the existing fetch call
-                const decoder = new TextDecoder();
-                let fullResponse = '';
-                        
-                while (true) {
-                    const { done, value } = await reader.read();
+                    const decoder = new TextDecoder();
+                    let fullResponse = '';
+                    
+                    while (true) {
+                        const { done, value } = await reader.read();
                     if (done) {
                         // After streaming completes, fetch the full message details to get context/sources
                         // The backend's finalize_message should have updated the chat storage
@@ -346,29 +359,29 @@
                         break;
                     }
                     
-                    const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk.split('\n\n');
+                        const chunk = decoder.decode(value, { stream: true });
+                        const lines = chunk.split('\n\n');
 
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const eventData = line.slice(6);
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                const eventData = line.slice(6);
                             if (eventData.trim()) {
-                                try {
-                                    const data = JSON.parse(eventData);
-                                    if (data.chunk) {
-                                        fullResponse += data.chunk;
-                                        let formattedResponse = fullResponse;
+                                    try {
+                                        const data = JSON.parse(eventData);
+                                        if (data.chunk) {
+                                            fullResponse += data.chunk;
+                                            let formattedResponse = fullResponse;
                                         // Formatting logic (headings, etc.) can remain here
-                                        formattedResponse = formattedResponse
-                                            .replace(/# (SOURCES|ANALYSIS|APPLICABLE PROVISIONS|CONCLUSION):/g, 
-                                                '### $1:')
-                                            .replace(/\n(SOURCES|ANALYSIS|APPLICABLE PROVISIONS|CONCLUSION):/g, 
-                                                '\n### $1:');
-                                        contentContainer.innerHTML = marked.parse(formattedResponse);
+                                            formattedResponse = formattedResponse
+                                                .replace(/# (SOURCES|ANALYSIS|APPLICABLE PROVISIONS|CONCLUSION):/g, 
+                                                    '### $1:')
+                                                .replace(/\n(SOURCES|ANALYSIS|APPLICABLE PROVISIONS|CONCLUSION):/g, 
+                                                    '\n### $1:');
+                                            contentContainer.innerHTML = marked.parse(formattedResponse);
                                         // Styling sections can remain here
-                                        const sections = contentContainer.querySelectorAll('h3');
-                                        sections.forEach(section => {
-                                            section.className = 'text-lg font-bold mt-3 mb-2 text-blue-800';
+                                            const sections = contentContainer.querySelectorAll('h3');
+                                            sections.forEach(section => {
+                                                section.className = 'text-lg font-bold mt-3 mb-2 text-blue-800';
                                             if (section.textContent.includes('SOURCES')) section.className += ' border-b pb-1 border-blue-300';
                                             else if (section.textContent.includes('ANALYSIS')) section.className += ' border-b pb-1 border-blue-300';
                                             else if (section.textContent.includes('APPLICABLE PROVISIONS')) section.className += ' border-b pb-1 border-blue-300';
@@ -379,13 +392,13 @@
                                         // await loadChat(currentChatId); // Moved to the main loop's done condition
                                         // console.log("[SendMessage] Stream reported done by eventData.done");
                                         // The break below will exit this inner loop, outer loop's done will handle it.
-                                        break; 
+                                            break;
                                     } else if (data.error) {
                                         contentContainer.innerHTML = `<div class="text-red-600">Error: ${data.error}</div>`;
                                         console.error('[SendMessage] Streaming error from eventData:', data.error);
                                         break; // Exit inner loop
-                                    }
-                                } catch (e) {
+                                        }
+                                    } catch (e) {
                                     console.error('[SendMessage] Error parsing stream data JSON:', e, 'Data:', eventData);
                                 }
                             }
@@ -397,8 +410,8 @@
                     window.scrollTo(0, document.body.scrollHeight);
                 } // End of while(true) for reader.read()
                 await loadChats(); // Refresh chat list in sidebar (timestamps)
-
-            } catch (error) {
+                        
+                    } catch (error) {
                 console.error('[SendMessage] General error in sendMessage after initial fetch:', error);
                 // removeThinking(thinkingId); // thinkingId might be out of scope or already removed
                 const thinkingElement = document.querySelector("[id^='thinking-']");
@@ -973,8 +986,8 @@
                 folderNameContainer.className = 'flex items-center flex-1';
                 folderNameContainer.innerHTML = `
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                        </svg>
                     <span class="text-gray-300">${folder.name}</span>
                 `;
                 
@@ -1222,7 +1235,7 @@
                                 ? new Date(dataset.last_update_date).toLocaleString()
                                 : 'N/A';
                             lastUpdateHTML = `<p class="text-xs text-gray-500">Last updated: ${lastUpdate}</p>`;
-
+                            
                             datasetCard.innerHTML = `
                                 ${deleteButtonHTML}
                                 <h3 class="font-semibold text-lg pr-8">${dataset.name}</h3>
@@ -1330,140 +1343,446 @@
         }
         
         function processDocuments() {
-            // Create a modal dialog for document upload
+            showDatasetModal('create');
+        }
+
+        function showDatasetModal(mode = 'create', dataset = null) {
+            // Remove any existing dataset modal first
+            const existingModalInstance = document.querySelector('body > .fixed.inset-0.bg-black.bg-opacity-50');
+            if (existingModalInstance) {
+                existingModalInstance.remove();
+            }
+
+            // Create a modal dialog for dataset management
             const modalOverlay = document.createElement('div');
             modalOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50';
             
             const modalContent = document.createElement('div');
             modalContent.className = 'bg-white rounded-lg shadow-lg max-w-2xl w-full';
             
-            // Create the inner content div that will be scrollable
             const scrollableContent = document.createElement('div');
-            scrollableContent.className = 'p-6'; // Keep existing padding
-            scrollableContent.style.maxHeight = '75vh'; // Set max height (e.g., 75% of viewport height)
-            scrollableContent.style.overflowY = 'auto'; // Enable vertical scrollbar if content overflows
+            scrollableContent.className = 'p-6';
+            scrollableContent.style.maxHeight = '75vh'; 
+            scrollableContent.style.overflowY = 'auto';
+
+            // Prefill values for edit mode
+            const description = dataset?.description || '';
+            const author = dataset?.author || '';
+            const topic = dataset?.topic || '';
+            const linkedinUrl = dataset?.linkedin_url || '';
+            const customInstructions = dataset?.custom_instructions || '';
 
             scrollableContent.innerHTML = `
-                    <h2 class="text-2xl font-bold mb-4">Create dataset</h2>
+                <h2 class="text-2xl font-bold mb-4">${mode === 'create' ? 'Create' : 'Modify'} Dataset</h2>
+                
+                <form id="dataset-form">
+                    <div class="mb-4">
+                        <label class="block text-gray-700 mb-2">Dataset Name</label>
+                        <input
+                            type="text"
+                            id="dataset-name"
+                            value="${dataset?.name || ''}"
+                            placeholder="Enter dataset name"
+                            class="w-full border rounded px-3 py-2 ${mode === 'edit' ? 'bg-gray-100' : ''}"
+                            ${mode === 'edit' ? 'readonly' : 'required'}
+                        />
+                        <p class="mt-1 text-xs text-gray-500">
+                            <i>Note:</i> ${mode === 'edit' ? 'Dataset name cannot be changed' : 'Name will be sanitized - spaces and special characters will be replaced with hyphens'}
+                        </p>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-gray-700 mb-2">Author</label>
+                        <input
+                            type="text"
+                            id="dataset-author"
+                            value="${author}"
+                            placeholder="Enter author's name"
+                            class="w-full border rounded px-3 py-2"
+                            required
+                        />
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-gray-700 mb-2">Topic</label>
+                        <input
+                            type="text"
+                            id="dataset-topic"
+                            value="${topic}"
+                            placeholder="e.g., EU Competition Law, US Sanctions"
+                            class="w-full border rounded px-3 py-2"
+                            required
+                        />
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-gray-700 mb-2">LinkedIn Profile URL (Optional)</label>
+                        <input
+                            type="url"
+                            id="dataset-linkedin"
+                            value="${linkedinUrl}"
+                            placeholder="https://linkedin.com/in/yourprofile"
+                            class="w-full border rounded px-3 py-2"
+                        />
+                    </div>
                     
-                    <form id="document-upload-form">
-                        <div class="mb-4">
-                            <label class="block text-gray-700 mb-2">Dataset Name</label>
-                            <input
-                                type="text"
-                                id="dataset-name"
-                                placeholder="Enter dataset name"
-                                class="w-full border rounded px-3 py-2"
-                                required
-                            />
-                            <p class="mt-1 text-xs text-gray-500">
-                                <i>Note:</i> Name will be sanitized - spaces and special characters will be replaced with hyphens
+                    <div class="mb-4">
+                        <label class="block text-gray-700 mb-2">Dataset Description (Optional)</label>
+                        <textarea
+                            id="dataset-description"
+                            placeholder="Enter a brief description of the dataset..."
+                            class="w-full border rounded px-3 py-2 h-24 resize-none"
+                        >${description}</textarea>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="block text-gray-700 mb-2">Custom Instructions (Optional)</label>
+                        <textarea
+                            id="dataset-custom-instructions"
+                            placeholder="Enter custom instructions for the AI when using this dataset (e.g., 'Focus on legal precedents from 2020 onwards', 'Respond in a formal tone'). These will be added to the system prompt."
+                            class="w-full border rounded px-3 py-2 h-24 resize-none"
+                        >${customInstructions}</textarea>
+                        <p class="mt-1 text-xs text-gray-500">
+                            <i>Note:</i> These instructions will be prepended to the AI's system prompt for this dataset.
+                        </p>
+                    </div>
+
+                    ${mode === 'create' ? `
+                    <div class="mb-6">
+                        <label class="block text-gray-700 mb-2">Upload Documents</label>
+                        <div id="drop-area" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                            <div id="file-preview" class="mb-4 grid grid-cols-2 gap-2"></div>
+                            <p class="text-gray-500 mb-2">Drag and drop files here or</p>
+                            <input type="file" id="file-input" multiple accept=".pdf,.txt" class="hidden" />
+                            <button type="button" id="browse-button" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                                Browse Files
+                            </button>
+                            <p class="text-sm text-gray-500 mt-2">
+                                Supported formats: PDF, TXT (max 10 files, 10MB each)
                             </p>
                         </div>
+                    </div>
+                    ` : `
+                    <div class="mb-6">
+                        <div class="flex justify-between items-center mb-2">
+                            <label class="block text-gray-700">Current Documents</label>
+                            <button type="button" id="add-documents-btn" class="text-sm text-blue-600 hover:text-blue-800">
+                                + Add Documents
+                            </button>
+                        </div>
+                        <div id="current-documents" class="border rounded-lg p-4 max-h-60 overflow-y-auto">
+                            <div class="text-center text-gray-500 py-4">Loading documents...</div>
+                        </div>
+                    </div>
+                    `}
+                    
+                    <div class="flex justify-end space-x-4 mt-6">
+                        <button type="button" id="cancel-dataset" class="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100">Cancel</button>
+                        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                            ${mode === 'create' ? 'Create Dataset' : 'Save Changes'}
+                        </button>
+                    </div>
+                </form>
+            `;
+            
+            modalContent.appendChild(scrollableContent);
+            modalOverlay.appendChild(modalContent);
+            document.body.appendChild(modalOverlay);
 
-                        <div class="mb-4">
-                            <label class="block text-gray-700 mb-2">Author</label>
-                            <input
-                                type="text"
-                                id="dataset-author"
-                                placeholder="Enter author's name"
-                                class="w-full border rounded px-3 py-2"
-                                required
-                            />
-                        </div>
+            // Set up event listeners
+            const form = modalContent.querySelector('#dataset-form');
+            const cancelButton = modalContent.querySelector('#cancel-dataset');
+            
+            // Handle cancel button
+            cancelButton.addEventListener('click', () => {
+                document.body.removeChild(modalOverlay);
+            });
 
-                        <div class="mb-4">
-                            <label class="block text-gray-700 mb-2">Topic</label>
-                            <input
-                                type="text"
-                                id="dataset-topic"
-                                placeholder="e.g., EU Competition Law, US Sanctions"
-                                class="w-full border rounded px-3 py-2"
-                                required
-                            />
-                        </div>
+            // If in edit mode, load current documents
+            if (mode === 'edit' && dataset) {
+                loadCurrentDocuments(dataset.name, modalContent.querySelector('#current-documents'));
+                
+                // Add event listener for the "Add Documents" button
+                const addDocumentsBtn = modalContent.querySelector('#add-documents-btn');
+                addDocumentsBtn.addEventListener('click', () => {
+                    showAddDocumentsModal(dataset.name);
+                });
+            }
 
-                        <div class="mb-4">
-                            <label class="block text-gray-700 mb-2">LinkedIn Profile URL (Optional)</label>
-                            <input
-                                type="url"
-                                id="dataset-linkedin"
-                                placeholder="https://linkedin.com/in/yourprofile"
-                                class="w-full border rounded px-3 py-2"
-                            />
+            // Handle form submission
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const formData = {
+                    author: document.getElementById('dataset-author').value.trim(),
+                    topic: document.getElementById('dataset-topic').value.trim(),
+                    linkedin_url: document.getElementById('dataset-linkedin').value.trim(),
+                    description: document.getElementById('dataset-description').value.trim(),
+                    custom_instructions: document.getElementById('dataset-custom-instructions').value.trim(),
+                };
+
+                if (!formData.author || !formData.topic) {
+                    alert('Author and Topic are required fields.');
+                    return;
+                }
+
+                if (mode === 'create') {
+                    const datasetName = document.getElementById('dataset-name').value.trim();
+                    if (!datasetName) {
+                        alert('Dataset name is required.');
+                        return;
+                    }
+
+                    // Get selected files
+                    const fileInput = document.getElementById('file-input');
+                    if (fileInput.files.length === 0) {
+                        alert('Please select at least one document to process.');
+                        return;
+                    }
+
+                    // Create FormData for file upload
+                    const uploadData = new FormData();
+                    uploadData.append('dataset_name', datasetName);
+                    uploadData.append('dataset_author', formData.author);
+                    uploadData.append('dataset_topic', formData.topic);
+                    if (formData.linkedin_url) uploadData.append('dataset_linkedin', formData.linkedin_url);
+                    if (formData.description) uploadData.append('dataset_description', formData.description);
+                    if (formData.custom_instructions) uploadData.append('dataset_custom_instructions', formData.custom_instructions);
+
+                    // Add files
+                    Array.from(fileInput.files).forEach(file => {
+                        uploadData.append('files', file);
+                    });
+
+                    try {
+                        const response = await fetch('/api/upload-documents', {
+                            method: 'POST',
+                            body: uploadData
+                        });
+
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.message || 'Error creating dataset');
+                        }
+
+                        const result = await response.json();
+                        showToast('Dataset created successfully!');
+                        document.body.removeChild(modalOverlay);
+                        viewDatasets(); // Refresh the list
+                    } catch (error) {
+                        console.error('Error creating dataset:', error);
+                        alert('Error creating dataset: ' + error.message);
+                    }
+                } else {
+                    // Edit mode
+                    try {
+                        const response = await fetch(`/api/datasets/${encodeURIComponent(dataset.name)}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(formData)
+                        });
+
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.message || `Server responded with ${response.status}`);
+                        }
+
+                        const result = await response.json();
+                        showToast('Dataset updated successfully!');
+                        document.body.removeChild(modalOverlay);
+                        viewDatasets(); // Refresh the list
+                    } catch (error) {
+                        console.error('Error updating dataset:', error);
+                        alert('Error updating dataset: ' + error.message);
+                    }
+                }
+            });
+
+            // Set up file upload handling for create mode
+            if (mode === 'create') {
+                setupFileUploadHandling(modalContent);
+            }
+        }
+
+        // Function to load current documents in edit mode
+        async function loadCurrentDocuments(datasetName, container) {
+            try {
+                const response = await fetch(`/api/datasets/${encodeURIComponent(datasetName)}/documents`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch documents');
+                }
+                
+                const documents = await response.json();
+                
+                if (documents.length === 0) {
+                    container.innerHTML = '<div class="text-center text-gray-500 py-4">No documents in this dataset</div>';
+                    return;
+                }
+                
+                container.innerHTML = '';
+                documents.forEach(doc => {
+                    const docElement = document.createElement('div');
+                    docElement.className = 'flex items-center justify-between p-2 border-b last:border-b-0';
+                    docElement.innerHTML = `
+                        <div class="flex items-center">
+                            <span class="mr-2">${doc.filename.endsWith('.pdf') ? '📄' : '📝'}</span>
+                            <span class="text-sm">${doc.filename}</span>
                         </div>
-                        
-                        <div class="mb-6">
-                            <label class="block text-gray-700 mb-2">Create dataset</label>
-                            <div id="drop-area" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-                                <div id="file-preview" class="mb-4 grid grid-cols-2 gap-2"></div>
-                                <p class="text-gray-500 mb-2">Drag and drop files here or</p>
-                                <input type="file" id="file-input" multiple accept=".pdf,.txt" class="hidden" />
-                                <button type="button" id="browse-button" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-                                    Browse Files
-                                </button>
-                                <p class="text-sm text-gray-500 mt-2">
-                                    Supported formats: PDF, TXT (max 10 files, 10MB each)
-                                </p>
-                            </div>
-                        </div>
-                        
-                        <div class="mb-4">
-                            <label class="block text-gray-700 mb-2">Dataset Description (Optional)</label>
-                            <textarea
-                                id="dataset-description"
-                                placeholder="Enter a brief description of the dataset..."
-                                class="w-full border rounded px-3 py-2 h-24 resize-none"
-                            ></textarea>
-                        </div>
-                        
-                        <div class="mb-4">
-                            <label class="block text-gray-700 mb-2">Custom Instructions (Optional)</label>
-                            <textarea
-                                id="dataset-custom-instructions"
-                                placeholder="Enter custom instructions for the AI when using this dataset (e.g., 'Focus on legal precedents from 2020 onwards', 'Respond in a formal tone'). These will be added to the system prompt."
-                                class="w-full border rounded px-3 py-2 h-24 resize-none"
-                            ></textarea>
-                            <p class="mt-1 text-xs text-gray-500">
-                                <i>Note:</i> These instructions will be prepended to the AI's system prompt for this dataset.
+                        <button type="button" class="text-red-500 hover:text-red-700 delete-document-btn" data-document-id="${doc.id}">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    `;
+                    
+                    // Add delete button event listener
+                    const deleteBtn = docElement.querySelector('.delete-document-btn');
+                    deleteBtn.addEventListener('click', async () => {
+                        if (confirm(`Are you sure you want to delete "${doc.filename}"? This will also remove all associated chunks.`)) {
+                            try {
+                                const deleteResponse = await fetch(`/api/datasets/${encodeURIComponent(datasetName)}/documents/${doc.id}`, {
+                                    method: 'DELETE'
+                                });
+                                
+                                if (!deleteResponse.ok) {
+                                    throw new Error('Failed to delete document');
+                                }
+                                
+                                // Remove the document element from the UI
+                                docElement.remove();
+                                
+                                // If no documents left, show the empty state
+                                if (container.children.length === 0) {
+                                    container.innerHTML = '<div class="text-center text-gray-500 py-4">No documents in this dataset</div>';
+                                }
+                                
+                                showToast('Document deleted successfully');
+                            } catch (error) {
+                                console.error('Error deleting document:', error);
+                                alert('Error deleting document: ' + error.message);
+                            }
+                        }
+                    });
+                    
+                    container.appendChild(docElement);
+                });
+            } catch (error) {
+                console.error('Error loading documents:', error);
+                container.innerHTML = '<div class="text-center text-red-500 py-4">Error loading documents</div>';
+            }
+        }
+
+        // Function to show modal for adding documents to existing dataset
+        function showAddDocumentsModal(datasetName) {
+            const modalOverlay = document.createElement('div');
+            modalOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50';
+            
+            const modalContent = document.createElement('div');
+            modalContent.className = 'bg-white rounded-lg shadow-lg max-w-2xl w-full';
+            
+            modalContent.innerHTML = `
+                <div class="p-6">
+                    <h2 class="text-2xl font-bold mb-4">Add Documents to ${datasetName}</h2>
+                    
+                    <div class="mb-6">
+                        <div id="drop-area" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                            <div id="file-preview" class="mb-4 grid grid-cols-2 gap-2"></div>
+                            <p class="text-gray-500 mb-2">Drag and drop files here or</p>
+                            <input type="file" id="file-input" multiple accept=".pdf,.txt" class="hidden" />
+                            <button type="button" id="browse-button" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                                Browse Files
+                            </button>
+                            <p class="text-sm text-gray-500 mt-2">
+                                Supported formats: PDF, TXT (max 10 files, 10MB each)
                             </p>
                         </div>
-                        
-                        <div class="flex justify-end space-x-4">
-                            <button
-                                type="button"
-                                id="cancel-upload"
-                                class="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="submit"
-                                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                                id="upload-button"
-                            >
-                                Process Documents
-                            </button>
-                        </div>
-                    </form>
-            `; // Removed the closing </div> for scrollableContent here as it's an element
-
-            modalContent.appendChild(scrollableContent); // Add scrollable content to modal
+                    </div>
+                    
+                    <div class="flex justify-end space-x-4">
+                        <button type="button" id="cancel-add-documents" class="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100">Cancel</button>
+                        <button type="button" id="upload-documents" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" disabled>
+                            Upload Documents
+                        </button>
+                    </div>
+                </div>
+            `;
+            
             modalOverlay.appendChild(modalContent);
             document.body.appendChild(modalOverlay);
             
-            // Set up event listeners (make sure to query within scrollableContent or modalContent as appropriate)
-            const dropArea = scrollableContent.querySelector('#drop-area');
-            const fileInput = scrollableContent.querySelector('#file-input');
-            const browseButton = scrollableContent.querySelector('#browse-button');
-            const cancelButton = scrollableContent.querySelector('#cancel-upload');
-            const filePreview = scrollableContent.querySelector('#file-preview');
-            const uploadForm = scrollableContent.querySelector('#document-upload-form');
+            // Set up file upload handling
+            setupFileUploadHandling(modalContent, datasetName);
             
-            // Track selected files
+            // Handle cancel button
+            modalContent.querySelector('#cancel-add-documents').addEventListener('click', () => {
+                document.body.removeChild(modalOverlay);
+            });
+        }
+
+        // Function to set up file upload handling
+        function setupFileUploadHandling(container, datasetName = null) {
+            const dropArea = container.querySelector('#drop-area');
+            const fileInput = container.querySelector('#file-input');
+            const browseButton = container.querySelector('#browse-button');
+            const filePreview = container.querySelector('#file-preview');
+            const uploadButton = container.querySelector('#upload-documents');
             let selectedFiles = [];
-            
-            // Function to update file preview
+
+            // Handle drag and drop events
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, false);
+            });
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropArea.addEventListener(eventName, () => {
+                    dropArea.classList.add('drag-over');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, () => {
+                    dropArea.classList.remove('drag-over');
+                }, false);
+            });
+
+            dropArea.addEventListener('drop', (e) => {
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFiles(files);
+                    // Update the file input with the dropped files
+                    const dataTransfer = new DataTransfer();
+                    selectedFiles.forEach(file => dataTransfer.items.add(file));
+                    fileInput.files = dataTransfer.files;
+                }
+            }, false);
+
+            fileInput.addEventListener('change', () => {
+                handleFiles(fileInput.files);
+            });
+
+            browseButton.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            function handleFiles(files) {
+                const newFiles = Array.from(files).filter(file => {
+                    const validTypes = ['.pdf', '.txt', 'application/pdf', 'text/plain'];
+                    const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+                    return validTypes.includes(file.type) || validTypes.includes(fileExt);
+                });
+
+                selectedFiles = [...selectedFiles, ...newFiles].slice(0, 10);
+                updateFilePreview();
+                
+                // Enable/disable upload button based on file selection
+                if (uploadButton) {
+                    uploadButton.disabled = selectedFiles.length === 0;
+                }
+            }
+
             function updateFilePreview() {
                 filePreview.innerHTML = '';
                 
@@ -1489,193 +1808,62 @@
                     
                     filePreview.appendChild(fileItem);
                     
-                    // Add remove button event
                     const removeBtn = fileItem.querySelector('button');
                     removeBtn.addEventListener('click', () => {
                         selectedFiles.splice(index, 1);
+                        // Update the file input after removing a file
+                        const dataTransfer = new DataTransfer();
+                        selectedFiles.forEach(file => dataTransfer.items.add(file));
+                        fileInput.files = dataTransfer.files;
                         updateFilePreview();
+                        if (uploadButton) {
+                            uploadButton.disabled = selectedFiles.length === 0;
+                        }
                     });
                 });
-                
-                // Show or hide the preview section
-                if (selectedFiles.length > 0) {
-                    filePreview.classList.remove('hidden');
-                } else {
-                    filePreview.classList.add('hidden');
-                }
             }
-            
-            // Handle drag and drop events
-            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-                dropArea.addEventListener(eventName, (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                }, false);
-            });
-            
-            // Highlight drop area when dragging over it
-            ['dragenter', 'dragover'].forEach(eventName => {
-                dropArea.addEventListener(eventName, () => {
-                    dropArea.classList.add('border-blue-500', 'bg-blue-50');
-                }, false);
-            });
-            
-            ['dragleave', 'drop'].forEach(eventName => {
-                dropArea.addEventListener(eventName, () => {
-                    dropArea.classList.remove('border-blue-500', 'bg-blue-50');
-                }, false);
-            });
-            
-            // Handle dropped files
-            dropArea.addEventListener('drop', (e) => {
-                const files = e.dataTransfer.files;
-                handleFiles(files);
-            }, false);
-            
-            // Handle file input change
-            fileInput.addEventListener('change', () => {
-                handleFiles(fileInput.files);
-            });
-            
-            // Open file dialog when browse button is clicked
-            browseButton.addEventListener('click', () => {
-                fileInput.click();
-            });
-            
-            // Function to handle selected files
-            function handleFiles(files) {
-                // Convert FileList to array and filter by file type
-                const newFiles = Array.from(files).filter(file => {
-                    const validTypes = ['.pdf', '.txt', 'application/pdf', 'text/plain'];
-                    const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-                    return validTypes.includes(file.type) || validTypes.includes(fileExt);
-                });
-                
-                // Add to selected files (up to 10)
-                selectedFiles = [...selectedFiles, ...newFiles].slice(0, 10);
-                
-                // Update preview
-                updateFilePreview();
-            }
-            
-            // Close modal on cancel
-            cancelButton.addEventListener('click', () => {
-                document.body.removeChild(modalOverlay);
-            });
-            
-            // Handle form submission
-            uploadForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                
-                const datasetName = document.getElementById('dataset-name').value;
-                if (!datasetName) return;
 
-                const datasetAuthor = document.getElementById('dataset-author').value.trim();
-                const datasetTopic = document.getElementById('dataset-topic').value.trim();
-                const datasetLinkedin = document.getElementById('dataset-linkedin').value.trim();
-                const datasetDescription = document.getElementById('dataset-description').value.trim();
-                const datasetCustomInstructions = document.getElementById('dataset-custom-instructions').value.trim(); // New field
-                
-                if (!datasetAuthor || !datasetTopic) {
-                    alert('Author and Topic are required fields.');
-                    return;
-                }
-
-                if (selectedFiles.length === 0) {
-                    alert('Please select at least one document to process.');
-                    return;
-                }
-                
-                // Create FormData object
-                const formData = new FormData();
-                formData.append('dataset_name', datasetName);
-                formData.append('dataset_author', datasetAuthor);
-                formData.append('dataset_topic', datasetTopic);
-                if (datasetLinkedin) {
-                    formData.append('dataset_linkedin', datasetLinkedin);
-                }
-                if (datasetDescription) {
-                    formData.append('dataset_description', datasetDescription);
-                }
-                if (datasetCustomInstructions) { // New field
-                    formData.append('dataset_custom_instructions', datasetCustomInstructions);
-                }
-                
-                // Add files to FormData
-                selectedFiles.forEach(file => {
-                    formData.append('files', file);
-                });
-                
-                // Show loading state
-                const uploadButton = document.getElementById('upload-button');
-                uploadButton.disabled = true;
-                uploadButton.innerHTML = `
-                    <div class="flex items-center">
-                        <div class="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                        Uploading...
-                    </div>
-                `;
-                
-                // Send upload request
-                fetch('/api/upload-documents', {
-                    method: 'POST',
-                    body: formData,
-                })
-                .then(response => {
-                    // Check if response is ok
-                    if (!response.ok) {
-                        if (response.headers.get('content-type')?.includes('application/json')) {
-                            return response.json().then(errorData => {
-                                throw new Error(errorData.message || 'Error processing documents');
-                            });
-                        } else {
-                            // If not JSON, get text content
-                            return response.text().then(text => {
-                                throw new Error('Server error: ' + text.substring(0, 100));
-                            });
-                        }
+            // If this is for adding documents to an existing dataset
+            if (datasetName && uploadButton) {
+                uploadButton.addEventListener('click', async () => {
+                    if (selectedFiles.length === 0) {
+                        alert('Please select at least one document to upload.');
+                        return;
                     }
-                    return response.json();
-                })
-                .then(data => {
-                    // Close modal
-                    document.body.removeChild(modalOverlay);
-                    
-                    // Get the display name (either original if provided or sanitized)
-                    const displayName = data.original_name || data.dataset;
-                    
-                    // Show success message
-                    addMessage('assistant', `Documents processed successfully: ${data.message}`, null, false, true);
-                    
-                    // Update current dataset to the one just created (use the sanitized name for API calls)
-                    currentDataset = data.dataset;
-                    // But display the original name for user-friendliness
-                    document.getElementById('current-dataset-indicator').textContent = displayName;
-                    
-                    // Update count badge with an approximation
-                    const countBadge = document.getElementById('dataset-count-badge');
-                    const documentCount = data.message.split('text chunks')[0].trim();
-                    countBadge.textContent = `${documentCount} documents`;
-                    countBadge.className = 'ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800';
-                    countBadge.classList.remove('hidden');
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    
-                    // Keep modal open and show error
-                    const errorMsg = document.createElement('div');
-                    errorMsg.className = 'mt-4 p-3 bg-red-100 text-red-800 rounded';
-                    errorMsg.textContent = error.message || 'Error processing documents';
-                    
-                    // Insert before buttons
-                    const buttonsDiv = scrollableContent.querySelector('.flex.justify-end');
-                    buttonsDiv.parentNode.insertBefore(errorMsg, buttonsDiv);
-                    
-                    // Re-enable button
-                    uploadButton.disabled = false;
-                    uploadButton.textContent = 'Process Documents';
+
+                    const formData = new FormData();
+                    selectedFiles.forEach(file => {
+                        formData.append('files', file);
+                    });
+
+                    try {
+                        const response = await fetch(`/api/datasets/${encodeURIComponent(datasetName)}/documents`, {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.message || 'Error uploading documents');
+                        }
+
+                        showToast('Documents uploaded successfully!');
+                        document.body.removeChild(container.closest('.fixed'));
+                        
+                        // Refresh the documents list in the main modal
+                        const mainModal = document.querySelector('.fixed.inset-0.bg-black.bg-opacity-50');
+                        if (mainModal) {
+                            const documentsContainer = mainModal.querySelector('#current-documents');
+                            if (documentsContainer) {
+                                loadCurrentDocuments(datasetName, documentsContainer);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error uploading documents:', error);
+                        alert('Error uploading documents: ' + error.message);
+                    }
                 });
-            });
+            }
         }
 
         // Function to handle right-click context menu on chat items
@@ -1877,7 +2065,7 @@
                 alert('Failed to delete folder. Please try again.');
             }
         }
-
+        
         // Remove any open context menu
         function removeContextMenu() {
             const existingMenu = document.getElementById('chat-context-menu') || document.getElementById('dataset-context-menu') || document.getElementById('folder-context-menu');
@@ -2085,7 +2273,7 @@
                     
                     setTimeout(() => {
                         if (toastMsg.parentNode) {
-                            document.body.removeChild(toastMsg);
+                        document.body.removeChild(toastMsg);
                         }
                     }, 3000);
                     
@@ -2301,123 +2489,7 @@
         }
 
         function showEditDatasetModal(dataset) {
-            // Create a modal dialog for editing dataset metadata
-            const modalOverlay = document.createElement('div');
-            modalOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 edit-modal-overlay'; // Added class for potential targeted removal
-            
-            const modalContent = document.createElement('div');
-            modalContent.className = 'bg-white rounded-lg shadow-lg max-w-2xl w-full';
-            
-            const scrollableContent = document.createElement('div');
-            scrollableContent.className = 'p-6';
-            scrollableContent.style.maxHeight = '75vh'; 
-            scrollableContent.style.overflowY = 'auto';
-
-            // Prefill values, handling undefined gracefully
-            const description = dataset.description || '';
-            const author = dataset.author || '';
-            const topic = dataset.topic || '';
-            const linkedinUrl = dataset.linkedin_url || '';
-            // Custom instructions might not be directly in dataset object from /api/datasets initially
-            // We might need to fetch it or ensure /api/datasets returns it.
-            // For now, assume it might be missing or needs separate fetch if this becomes an issue.
-            const customInstructions = dataset.custom_instructions || ''; 
-
-            scrollableContent.innerHTML = `
-                <h2 class="text-2xl font-bold mb-6">Edit Dataset: <span class="font-normal text-blue-700">${dataset.name}</span></h2>
-                
-                <form id="dataset-edit-form">
-                    <div class="mb-4">
-                        <label class="block text-gray-700 mb-2">Dataset Name (Read-only)</label>
-                        <input type="text" value="${dataset.name}" class="w-full border rounded px-3 py-2 bg-gray-100" readonly />
-                    </div>
-
-                    <div class="mb-4">
-                        <label class="block text-gray-700 mb-2">Author</label>
-                        <input type="text" id="edit-dataset-author" value="${author}" class="w-full border rounded px-3 py-2" required />
-                    </div>
-
-                    <div class="mb-4">
-                        <label class="block text-gray-700 mb-2">Topic</label>
-                        <input type="text" id="edit-dataset-topic" value="${topic}" class="w-full border rounded px-3 py-2" required />
-                    </div>
-
-                    <div class="mb-4">
-                        <label class="block text-gray-700 mb-2">LinkedIn Profile URL (Optional)</label>
-                        <input type="url" id="edit-dataset-linkedin" value="${linkedinUrl}" placeholder="https://linkedin.com/in/yourprofile" class="w-full border rounded px-3 py-2" />
-                    </div>
-                    
-                    <div class="mb-4">
-                        <label class="block text-gray-700 mb-2">Dataset Description</label>
-                        <textarea id="edit-dataset-description" class="w-full border rounded px-3 py-2 h-24 resize-none">${description}</textarea>
-                    </div>
-
-                    <div class="mb-4">
-                        <label class="block text-gray-700 mb-2">Custom Instructions (Optional)</label>
-                        <textarea id="edit-dataset-custom-instructions" placeholder="Enter custom instructions for the AI..." class="w-full border rounded px-3 py-2 h-24 resize-none">${customInstructions}</textarea>
-                        <p class="mt-1 text-xs text-gray-500">
-                            <i>Note:</i> These instructions will be prepended to the AI's system prompt for this dataset.
-                        </p>
-                    </div>
-                    
-                    <div class="flex justify-end space-x-4 mt-6">
-                        <button type="button" id="cancel-edit" class="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100">Cancel</button>
-                        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save Changes</button>
-                    </div>
-                </form>
-            `;
-            
-            modalContent.appendChild(scrollableContent);
-            modalOverlay.appendChild(modalContent);
-            document.body.appendChild(modalOverlay);
-            
-            // Event listeners
-            modalContent.querySelector('#cancel-edit').addEventListener('click', () => {
-                document.body.removeChild(modalOverlay);
-            });
-            
-            modalContent.querySelector('#dataset-edit-form').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                
-                const updatedData = {
-                    author: document.getElementById('edit-dataset-author').value.trim(),
-                    topic: document.getElementById('edit-dataset-topic').value.trim(),
-                    linkedin_url: document.getElementById('edit-dataset-linkedin').value.trim(),
-                    description: document.getElementById('edit-dataset-description').value.trim(),
-                    custom_instructions: document.getElementById('edit-dataset-custom-instructions').value.trim(),
-                };
-
-                if (!updatedData.author || !updatedData.topic) {
-                    alert('Author and Topic are required fields.');
-                    return;
-                }
-                
-                try {
-                    const response = await fetch(`/api/datasets/${encodeURIComponent(dataset.name)}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(updatedData)
-                    });
-                    
-                    if (!response.ok) {
-                        const errorResult = await response.json().catch(() => ({ message: 'Failed to update dataset. Server error.' }));
-                        throw new Error(errorResult.message || `Server responded with ${response.status}`);
-                    }
-                    
-                    const result = await response.json();
-                    
-                    if (result.success) {
-                        showToast('Dataset updated successfully!');
-                        document.body.removeChild(modalOverlay);
-                        viewDatasets(); // Refresh the list of datasets to show changes
-                    } else {
-                        alert('Failed to update dataset: ' + (result.message || 'Unknown error'));
-                    }
-                } catch (error) {
-                    console.error('Error updating dataset:', error);
-                    alert('Error updating dataset: ' + error.message);
-                }
-            });
+            showDatasetModal('edit', dataset);
         }
 
         function showToast(message) {

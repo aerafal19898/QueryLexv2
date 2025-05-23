@@ -334,10 +334,10 @@ class LegalDocumentProcessor:
         
         return final_chunks
     
-    def create_dataset(
+    def create_ragmodel(
         self, 
         documents_dir: str, 
-        dataset_name: str,
+        ragmodel_name: str,
         file_filter: str = "*.pdf",
         metadata_extractor=None
     ) -> Tuple[int, int]:
@@ -345,7 +345,7 @@ class LegalDocumentProcessor:
         
         Args:
             documents_dir: Directory containing documents
-            dataset_name: Name for the Chroma collection
+            ragmodel_name: Name for the Chroma collection
             file_filter: Filter for files to process
             metadata_extractor: Optional function to extract metadata from filenames
             
@@ -355,7 +355,7 @@ class LegalDocumentProcessor:
         import glob
         
         # Create or get collection
-        collection = self.chroma_client.get_or_create_collection(name=dataset_name)
+        collection = self.chroma_client.get_or_create_collection(name=ragmodel_name)
         
         # Get list of PDF files
         file_paths = glob.glob(os.path.join(documents_dir, file_filter))
@@ -493,18 +493,18 @@ class LegalDocumentProcessor:
         
         return doc_count, chunk_count
     
-    def query_dataset(
+    def query_ragmodel(
         self, 
-        dataset_name: str, 
+        ragmodel_name: str, 
         query: str, 
         n_results: int = 5,
         use_hybrid_search: bool = True,
         use_reranking: bool = True
     ) -> Dict[str, Any]:
-        """Query a dataset with a natural language query.
+        """Query a ragmodel with a natural language query.
         
         Args:
-            dataset_name: Name of the Chroma collection
+            ragmodel_name: Name of the Chroma collection
             query: Natural language query
             n_results: Number of results to return
             use_hybrid_search: Whether to use hybrid search (vector + BM25)
@@ -516,7 +516,7 @@ class LegalDocumentProcessor:
         # Import numpy for array operations
         import numpy as np
         
-        collection = self.chroma_client.get_collection(name=dataset_name)
+        collection = self.chroma_client.get_collection(name=ragmodel_name)
         
         # 1. Hybrid Search: Combine vector search with keyword search
         if use_hybrid_search:
@@ -605,4 +605,14 @@ class LegalDocumentProcessor:
                 n_results=n_results
             )
             
+        return results
+
+    def query_dataset(self, dataset_name, query, n_results=5, use_hybrid_search=True, use_reranking=True):
+        """Query the Chroma collection for relevant documents and metadatas."""
+        collection = self.chroma_client.get_or_create_collection(name=dataset_name)
+        results = collection.query(
+            query_texts=[query],
+            n_results=n_results,
+            include=["documents", "metadatas"]
+        )
         return results

@@ -43,13 +43,14 @@ The Legal Sanctions RAG application is a specialized legal expert chatbot system
 - [x] Implement chat history persistence
 - [x] Create auto-naming of chats based on content
 
-### 5. Dataset Management
-- [x] Create dataset selection UI
-- [x] Implement dataset creation
-- [x] Add dataset deletion capabilities
-- [x] Create document counter badge for each dataset
-- [x] Add current dataset indicator in the chat interface
-- [x] Implement dataset source exploration interface
+### 5. RAG Model Management
+- [x] Create RAG model selection UI
+- [x] Implement RAG model creation
+- [x] Add RAG model deletion capabilities
+- [x] Create document counter badge for each RAG model
+- [x] Add current RAG model indicator in the chat interface
+- [x] Implement RAG model source exploration interface
+- [x] Add RAG model assignment for uploaded documents
 
 ### 6. Document Upload
 - [x] Create document upload modal
@@ -179,6 +180,11 @@ GET /api/credits/balance - Get user credit balance
 GET /api/credits/history - Get credit transaction history
 GET /api/credits/packages - Get available credit packages
 POST /api/credits/purchase - Purchase credits
+
+// RAG Model Management
+GET /api/ragmodels - Get available RAG models
+DELETE /api/ragmodels/{name} - Delete a RAG model
+POST /api/upload-documents - Upload documents to create RAG model
 ```
 
 ### CSS Styling Notes
@@ -204,7 +210,7 @@ POST /api/credits/purchase - Purchase credits
 1. Create the base layout structure with sidebar and main content area
 2. Implement core chat functionality with message display and input
 3. Add folder and chat management capabilities
-4. Implement dataset selection and document upload features
+4. Implement RAG model selection and document upload features
 5. Create structured response formatting
 6. Add streaming capability for real-time responses
 7. Implement feedback system

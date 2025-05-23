@@ -21,7 +21,7 @@ feedback_endpoint = f"{base_url}/api/feedback"
 print("1. Creating a new chat...")
 create_response = requests.post(
     chat_endpoint,
-    json={"title": "Test Feedback Chat", "dataset": "EU-Sanctions"}
+    json={"title": "Test Feedback Chat", "ragmodel": "EU-Sanctions"}
 )
 
 if create_response.status_code != 200:
@@ -38,7 +38,7 @@ print(f"Query: {test_query}")
 
 message_response = requests.post(
     f"{chat_endpoint}/{chat_id}/messages",
-    json={"message": test_query, "dataset": "EU-Sanctions"}
+    json={"message": test_query, "ragmodel": "EU-Sanctions"}
 )
 
 if message_response.status_code != 200:

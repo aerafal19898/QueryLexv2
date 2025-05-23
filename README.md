@@ -17,8 +17,8 @@ A high-security web application for querying confidential legal documents using 
 ## Advanced RAG Features
 
 - Chat interface with streaming response
-- Multiple dataset selection with hybrid vector search
-- Secure document processing to create custom datasets
+- Multiple RAG model selection with hybrid vector search
+- Secure document processing to create custom RAG models
 - Specialized in legal document processing and retrieval
 - Powered by DeepSeek R1 Distill Llama 70B for accurate responses
 - Multi-approach document processing with fallback mechanisms
